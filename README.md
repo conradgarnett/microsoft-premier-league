@@ -12,3 +12,6 @@ Deliver personalized experiences for studios, streaming platforms, and fans
 
 ideas:
 use school soccer video footage. play fifa matches as well. - all for training data. replicate fc24 hypermotion replay system, but make more advanced. detect leg/body angles to detect what players are doing.
+
+https://devpost.com/software/gamesense-eput46
+some inspo
