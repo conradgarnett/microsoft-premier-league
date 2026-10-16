@@ -14,7 +14,7 @@ const proc = spawn(chrome, [
 ], { stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let target;
-for (let i = 0; i < 40 && !target; i++) {
+for (let i = 0; i < 120 && !target; i++) {
   await sleep(250);
   try { target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((t) => t.type === "page"); } catch {}
 }

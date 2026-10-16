@@ -80,39 +80,98 @@ function Goal({ side }: { side: 1 | -1 }) {
   );
 }
 
-function Stands() {
-  // Simple dark tiers around the pitch with a faint crowd speckle; purely atmospheric.
-  const tex = useMemo(() => {
-    const c = document.createElement("canvas");
-    c.width = 512;
-    c.height = 64;
-    const g = c.getContext("2d")!;
-    g.fillStyle = "#0b0f17";
-    g.fillRect(0, 0, 512, 64);
-    for (let i = 0; i < 2600; i++) {
-      const v = 30 + Math.random() * 60;
-      g.fillStyle = `rgb(${v},${v + 4},${v + 14})`;
-      g.fillRect(Math.random() * 512, Math.random() * 64, 2, 2);
-    }
-    const t = new THREE.CanvasTexture(c);
-    t.wrapS = THREE.RepeatWrapping;
-    t.repeat.set(6, 1);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  }, []);
-  const sides: [number, number, number, number][] = [
-    [0, 44, 130, 0],
-    [0, -44, 130, Math.PI],
-    [64, 0, 90, -Math.PI / 2],
-    [-64, 0, 90, Math.PI / 2],
+function crowdTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#0a0d14";
+  g.fillRect(0, 0, 1024, 256);
+  // seat rows + a speckled crowd, slightly team-tinted
+  for (let row = 0; row < 16; row++) {
+    g.fillStyle = row % 2 ? "#121826" : "#0e131e";
+    g.fillRect(0, row * 16, 1024, 16);
+  }
+  const tints = ["#2f81f7", "#f2683c", "#d9dde6", "#3a4152", "#6b7385"];
+  for (let i = 0; i < 9000; i++) {
+    g.fillStyle = tints[Math.floor(Math.random() * tints.length)];
+    g.globalAlpha = 0.25 + Math.random() * 0.45;
+    g.fillRect(Math.random() * 1024, Math.floor(Math.random() * 16) * 16 + 4 + Math.random() * 6, 3, 4);
+  }
+  g.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function boardTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 32;
+  const g = c.getContext("2d")!;
+  const grad = g.createLinearGradient(0, 0, 1024, 0);
+  grad.addColorStop(0, "#0b2a4a");
+  grad.addColorStop(0.5, "#123d6b");
+  grad.addColorStop(1, "#0b2a4a");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 1024, 32);
+  g.font = "bold 22px Barlow Condensed, Arial Narrow, sans-serif";
+  g.fillStyle = "#9fd2ff";
+  for (let x = 20; x < 1024; x += 256) g.fillText("TACTICAL REPLAY  ·  INSIDE THE GAME", x, 24);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Ad boards on all sides; tiered stands behind the far touchline and both goals (the near side hosts the broadcast camera). */
+function Stadium() {
+  const crowd = useMemo(crowdTexture, []);
+  const boards = useMemo(boardTexture, []);
+  const sides: { pos: [number, number, number]; rot: number; len: number; stand: boolean }[] = [
+    { pos: [0, 0, -38], rot: 0, len: 113, stand: true },
+    { pos: [0, 0, 38], rot: Math.PI, len: 113, stand: false },
+    { pos: [-56.5, 0, 0], rot: Math.PI / 2, len: 76, stand: true },
+    { pos: [56.5, 0, 0], rot: -Math.PI / 2, len: 76, stand: true },
   ];
+  const tilt = 0.95;
+  const depth = 30;
   return (
     <>
-      {sides.map(([x, z, len, rot], i) => (
-        <mesh key={i} position={[x, 6, z]} rotation={[-0.55, rot, 0, "YXZ"]}>
-          <planeGeometry args={[len, 16]} />
-          <meshStandardMaterial map={tex} side={THREE.DoubleSide} roughness={1} />
-        </mesh>
+      {sides.map((sd, i) => {
+        const tex = boards.clone();
+        tex.repeat.set(sd.len / 40, 1);
+        tex.needsUpdate = true;
+        const ctex = crowd.clone();
+        ctex.repeat.set(sd.len / 30, 1);
+        ctex.needsUpdate = true;
+        return (
+          <group key={i} position={sd.pos} rotation={[0, sd.rot, 0]}>
+            <mesh position={[0, 0.5, 0]}>
+              <boxGeometry args={[sd.len, 1, 0.2]} />
+              <meshStandardMaterial map={tex} emissive="#3b8fe0" emissiveMap={tex} emissiveIntensity={0.8} />
+            </mesh>
+            {sd.stand && (
+              <mesh position={[0, 2 + (depth / 2) * Math.cos(tilt), -4 - (depth / 2) * Math.sin(tilt)]} rotation={[-tilt, 0, 0]}>
+                <planeGeometry args={[sd.len + 20, depth]} />
+                <meshStandardMaterial map={ctex} roughness={1} />
+              </mesh>
+            )}
+          </group>
+        );
+      })}
+      {[[-62, -44], [62, -44], [-62, 44], [62, 44]].map(([x, z], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <mesh position={[0, 18, 0]}>
+            <cylinderGeometry args={[0.35, 0.5, 36, 8]} />
+            <meshStandardMaterial color="#1a1f2b" />
+          </mesh>
+          <mesh position={[0, 36.5, 0]} rotation={[0, Math.atan2(-x, -z), 0]}>
+            <boxGeometry args={[6, 2.4, 0.4]} />
+            <meshStandardMaterial color="#fff" emissive="#fff8e0" emissiveIntensity={3} />
+          </mesh>
+        </group>
       ))}
     </>
   );
@@ -137,7 +196,7 @@ export default function Pitch() {
       </mesh>
       <Goal side={1} />
       <Goal side={-1} />
-      <Stands />
+      <Stadium />
     </group>
   );
 }

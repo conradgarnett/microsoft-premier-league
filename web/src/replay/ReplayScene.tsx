@@ -324,7 +324,7 @@ function TacticalOverlays({ replay, teams, clock, overlays }: Ctx) {
       <mesh ref={line} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[0.35, 68]} />
         <meshBasicMaterial color="#5ce1ff" transparent opacity={0.75} />
-        <Html position={[0, 34, 0.5]} center zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
+        <Html position={[0, -31, 0.5]} center zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
           <div ref={lineLabel} className="callout line-label" />
         </Html>
       </mesh>
