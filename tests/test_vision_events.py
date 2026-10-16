@@ -43,3 +43,17 @@ def test_goal_detected_from_ball_crossing_line():
     ev = detect_events(0.0, fps, ball, players, ["a1", "b1"], {"a1": "a", "b1": "b"})
     assert [e.type.value for e in ev] == ["shot", "goal"]
     assert ev[0].outcome == "goal" and ev[0].player_id == "a1"
+
+
+def test_ball_select_prefers_detector_then_tracks_motion():
+    from vision.ball import select
+
+    F = 10
+    prior = np.tile([50.0, 30.0], (F, 1))
+    cands = [np.zeros((0, 5)) for _ in range(F)]
+    dets = [np.zeros((0, 5)) for _ in range(F)]
+    dets[0] = np.array([[0, 0, 0.9, 60.0, 30.0], [0, 0, 0.4, 51.0, 30.0]])  # confident hit 10 m off the prior wins
+    cands[1] = np.array([[0, 0, 5, 60.5, 30.0], [0, 0, 5, 50.0, 30.0]])  # motion near the last pick
+    cands[2] = np.array([[0, 0, 5, 90.0, 30.0]])  # 30 m jump in one frame: rejected
+    xy, conf = select(prior, cands, dets)
+    assert conf[0] == 0.9 and conf[1] == 0.8 and conf[2] == 0.2

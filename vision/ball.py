@@ -1,6 +1,9 @@
 """Ball localisation for a fixed panorama camera.
 
-A 4-8 px ball defeats the generic detector (it fires on white boots), so we combine:
+A 4-8 px ball defeats the generic detector on downscaled frames (it fires on white boots), so we combine:
+
+0. **Crop detector**: RT-DETR "sports ball" on a full-resolution crop around the prior,
+   a few times per second (the strongest cue when it fires).
 
 1. **Motion candidates**: static-camera background subtraction; small, round, bright
    blobs outside person boxes and inside the pitch.
@@ -84,21 +87,60 @@ def prior_xy(fc: dict, cam: PanoramaCamera, dirn: np.ndarray) -> np.ndarray:
     return C[:2] + np.stack([np.sin(bearing), np.cos(bearing)], 1) * dist[:, None]
 
 
-def select(prior: np.ndarray, cands: list[np.ndarray], gate_m: float = 9.0, fps: float = 25.0) -> tuple[np.ndarray, np.ndarray]:
-    """Per frame pick the candidate nearest the prior and the last pick; returns (xy (F,2), confidence (F,))."""
+def detector_candidates(det, img: np.ndarray, cam: PanoramaCamera, prior: np.ndarray, threshold: float = 0.3) -> np.ndarray:
+    """-> (N, 5) [u, v, score, pitch_x, pitch_y] "sports ball" detections in a native-resolution crop.
+
+    Downscaled whole halves shrink the ball to 2-4 px and the detector misses it; a 1024x512
+    crop at full resolution around the follow-cam prior keeps it at 5-8 px. Spare balls by
+    the benches are dropped by requiring a position on the pitch.
+    """
+    out = []
+    for half in ("top", "bottom"):
+        r0, r1 = cam.p["rows"][half]
+        uv = cam.to_pixels(half, np.array([[prior[0], prior[1], 0.0]]))[0]
+        if not (np.isfinite(uv).all() and 0 <= uv[0] < img.shape[1] and r0 <= uv[1] < r1):
+            continue
+        x0 = int(np.clip(uv[0] - 512, 0, img.shape[1] - 1024))
+        y0 = int(np.clip(uv[1] - 256, r0, r1 - 512))
+        res = det([img[y0 : y0 + 512, x0 : x0 + 1024]], size=(512, 1024), threshold=threshold)[0]
+        for b, sc in zip(res["boxes"][res["labels"] == det.ball], res["scores"][res["labels"] == det.ball], strict=True):
+            u, v = (b[0] + b[2]) / 2 + x0, b[3] + y0
+            g = cam.to_pitch(half, np.array([[u, v]]))[0]
+            if np.isfinite(g).all() and -1 < g[0] < cam.p["L"] + 1 and -1 < g[1] < cam.p["W"] + 1:
+                out.append((u, v, sc, g[0], g[1]))
+        break
+    return np.array(out, float).reshape(-1, 5)
+
+
+def select(prior: np.ndarray, cands: list[np.ndarray], dets: list[np.ndarray] | None = None, gate_m: float = 9.0, det_gate_m: float = 25.0, fps: float = 25.0) -> tuple[np.ndarray, np.ndarray]:
+    """Per frame pick a ball position; returns (xy (F,2), confidence (F,)).
+
+    Detector hits (``dets``, sparse frames) win: highest score, penalised by distance to the
+    reference (last pick if recent, else the follow-cam prior), confidence 0.9. Otherwise the
+    motion candidate nearest the reference within ``gate_m`` (0.8). Else the prior (0.2).
+    """
     F = len(prior)
     xy = prior.copy()
     conf = np.full(F, 0.2)
     last = None
     for f in range(F):
+        recent = last is not None and f - last[0] <= fps
+        ref = 0.3 * prior[f] + 0.7 * last[1] if recent else prior[f]
+        dc = dets[f] if dets is not None else np.zeros((0, 5))
+        if len(dc):
+            d = np.linalg.norm(dc[:, 3:5] - ref, axis=1)
+            ok = d < det_gate_m
+            if ok.any():
+                k = int(np.argmax(np.where(ok, dc[:, 2] - d / 40, -np.inf)))
+                xy[f], conf[f] = dc[k, 3:5], 0.9
+                last = (f, xy[f])
+                continue
         c = cands[f]
         if len(c):
-            ref = prior[f] if last is None or f - last[0] > fps else 0.5 * prior[f] + 0.5 * last[1]
             d = np.linalg.norm(c[:, 3:5] - ref, axis=1)
             k = int(np.argmin(d))
-            if d[k] < gate_m:
-                xy[f] = c[k, 3:5]
-                conf[f] = 0.8
+            if d[k] < (4.0 + 25.0 * (f - last[0]) / fps if recent else gate_m):  # ball moves <= ~25 m/s
+                xy[f], conf[f] = c[k, 3:5], 0.8
                 last = (f, xy[f])
     # smooth: short median filter, then hold measured points between gaps
     k = 5
@@ -119,6 +161,7 @@ def main() -> None:
     for name in ("video", "camera", "followcam", "directions", "extract", "out"):
         ap.add_argument(name)
     ap.add_argument("--src-fps", type=float, default=29.97, help="frame rate the directions file is sampled at")
+    ap.add_argument("--det-fps", type=float, default=5.0, help="crop detector rate (0 = motion candidates only)")
     a = ap.parse_args()
     cam = PanoramaCamera(json.load(open(a.camera))["params"])
     fc = json.load(open(a.followcam))
@@ -139,9 +182,17 @@ def main() -> None:
         boxes = ex["box"][ex["frame"] == pf]
         cands.append(candidates(buf[f - (len(ts) - len(buf))], bg, boxes, cam))
 
+    det, every = None, 0
+    if a.det_fps > 0:
+        from .detect import Detector
+
+        det, every = Detector(), max(1, int(round(fps / a.det_fps)))
+    dets: list[np.ndarray] = []
     for t, img in iter_frames(a.video, meta["start"], meta["duration"], fps):
         buf.append(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY))
         ts.append(t)
+        pr = prior_xy(fc, cam, dirs[[min(int(round(t * a.src_fps)), len(dirs) - 1)]])[0]
+        dets.append(detector_candidates(det, img, cam, pr) if det and (len(ts) - 1) % every == 0 else np.zeros((0, 5)))
         while len(cands) < len(ts) - half_win:
             process(len(cands))
         while len(buf) > 2 * half_win + 1 and len(ts) - len(buf) < len(cands) - half_win:
@@ -149,9 +200,9 @@ def main() -> None:
     while len(cands) < len(ts):
         process(len(cands))
     prior = prior_xy(fc, cam, dirs[np.clip(np.round(np.array(ts) * a.src_fps).astype(int), 0, len(dirs) - 1)])
-    xy, conf = select(prior, cands)
+    xy, conf = select(prior, cands, dets)
     np.savez_compressed(a.out, t=np.array(ts) - meta["start"], xy=xy, conf=conf, prior=prior, n_cands=np.array([len(c) for c in cands]))
-    print(f"ball: {len(ts)} frames, {np.mean(conf > 0.5):.0%} with a matched candidate, median candidates/frame {np.median([len(c) for c in cands]):.0f}")
+    print(f"ball: {len(ts)} frames, {np.mean(conf > 0.85):.0%} detector, {np.mean(conf > 0.5):.0%} with any matched candidate, median candidates/frame {np.median([len(c) for c in cands]):.0f}")
 
 
 if __name__ == "__main__":
