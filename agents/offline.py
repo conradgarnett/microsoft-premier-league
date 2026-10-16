@@ -60,6 +60,11 @@ T: dict[str, dict[str, str]] = {
     "f_focus": {"en": "Your player {p} was involved in this move.", "es": "Tu jugador {p} participó en esta jugada.", "fr": "Votre joueur {p} a participé à l'action.", "pt": "Seu jogador {p} participou da jogada."},
     # recap ----------------------------------------------------------------------------
     "r_clip": {"en": "Tracked from real footage: {n} passes and {pc} changes of possession in {s} seconds.", "es": "Seguimiento de vídeo real: {n} pases y {pc} cambios de posesión en {s} segundos.", "fr": "Suivi sur vidéo réelle : {n} passes et {pc} changements de possession en {s} secondes.", "pt": "Rastreado de vídeo real: {n} passes e {pc} trocas de posse em {s} segundos."},
+    "q_syn": {"en": "Synthetic match from a seeded engine (seed {seed}): all {n} events, positions and skeletons are simulated; movement is calibrated against aggregate real youth-football statistics.", "es": "Partido sintético de un motor con semilla ({seed}): los {n} eventos, posiciones y esqueletos son simulados; el movimiento está calibrado con estadísticas agregadas de fútbol juvenil real.", "fr": "Match synthétique issu d'un moteur à graine ({seed}) : les {n} événements, positions et squelettes sont simulés ; le mouvement est calibré sur des statistiques agrégées de football de jeunes réel.", "pt": "Partida sintética de um motor com semente ({seed}): os {n} eventos, posições e esqueletos são simulados; o movimento é calibrado com estatísticas agregadas de futebol juvenil real."},
+    "q_vid": {"en": "Tracked from real video: {p} players, visible {vis}% of the time; ball located in {ball}% of frames.", "es": "Seguimiento de vídeo real: {p} jugadores, visibles el {vis}% del tiempo; balón localizado en el {ball}% de los fotogramas.", "fr": "Suivi sur vidéo réelle : {p} joueurs, visibles {vis}% du temps ; ballon localisé sur {ball}% des images.", "pt": "Rastreado de vídeo real: {p} jogadores, visíveis {vis}% do tempo; bola localizada em {ball}% dos quadros."},
+    "q_events": {"en": "{n} events were detected automatically from the tracks; treat single passes as estimates (on synthetic ground truth the detector finds about 8 in 10 passes).", "es": "{n} eventos se detectaron automáticamente a partir del seguimiento; los pases individuales son estimaciones (con datos sintéticos de referencia el detector encuentra unos 8 de cada 10 pases).", "fr": "{n} événements ont été détectés automatiquement ; chaque passe est une estimation (sur vérité terrain synthétique, le détecteur trouve environ 8 passes sur 10).", "pt": "{n} eventos foram detectados automaticamente; passes individuais são estimativas (com verdade sintética o detector encontra cerca de 8 em 10 passes)."},
+    "q_mocap": {"en": "Body motion is motion capture placed on the real tracks, not the observed pose.", "es": "El movimiento corporal es captura de movimiento colocada sobre las trayectorias reales, no la postura observada.", "fr": "Les mouvements du corps sont de la capture de mouvement posée sur les trajectoires réelles, pas la posture observée.", "pt": "O movimento corporal é captura de movimento aplicada às trajetórias reais, não a pose observada."},
+    "q_lift": {"en": "Body poses are observed by one camera and lifted to 3D; depth is estimated, so joint angles are approximate.", "es": "Las posturas se observan con una cámara y se elevan a 3D; la profundidad es estimada, así que los ángulos son aproximados.", "fr": "Les postures sont vues par une seule caméra puis passées en 3D ; la profondeur est estimée, les angles sont donc approximatifs.", "pt": "As poses são observadas por uma câmera e elevadas a 3D; a profundidade é estimada, então os ângulos são aproximados."},
     "r_head": {"en": "{home} {hs}-{as_} {away}", "es": "{home} {hs}-{as_} {away}", "fr": "{home} {hs}-{as_} {away}", "pt": "{home} {hs}-{as_} {away}"},
     "r_result_win": {"en": "{w} beat {l} {ws}-{ls}.", "es": "{w} venció a {l} por {ws}-{ls}.", "fr": "{w} bat {l} {ws}-{ls}.", "pt": "{w} venceu o {l} por {ws}-{ls}."},
     "r_result_draw": {"en": "{home} and {away} drew {hs}-{as_}.", "es": "{home} y {away} empataron {hs}-{as_}.", "fr": "{home} et {away} se neutralisent {hs}-{as_}.", "pt": "{home} e {away} empataram em {hs}-{as_}."},
@@ -211,6 +216,18 @@ def recap(ctx: dict, lang: str, mode: str, focus: str | None) -> dict:
     return {"headline": line("r_head", goal_ids, lang, home=teams[home], away=teams[away], hs=hs, as_=as_), "claims": claims}
 
 
+def audit(ctx: dict, lang: str) -> dict:
+    q = ctx["quality"]
+    ev = q["evidence"]
+    if q["source"] != "video":
+        return {"claims": [line("q_syn", ev, lang, seed=q.get("seed"), n=q["n_events"])]}
+    claims = [line("q_vid", ev, lang, p=q.get("tracked_players", 0), vis=q.get("player_visible_pct", 0), ball=q.get("ball_known_pct", 0))]
+    if q["detected_events"]:
+        claims.append(line("q_events", ev, lang, n=q["detected_events"]))
+    claims.append(line("q_mocap" if q.get("skeleton_source") == "video-mocap" else "q_lift", ev, lang))
+    return {"claims": claims}
+
+
 def director(ctx: dict) -> dict:
     """Pick the reel (goals + top moments, chronological) and a camera script per moment."""
     moments = ctx["moments"]
@@ -257,6 +274,8 @@ def run_task(request: dict) -> str:
         out = analysis(ctx, lang, mode, focus)
     elif task == "recap":
         out = recap(ctx, lang, mode, focus)
+    elif task == "audit":
+        out = audit(ctx, lang)
     elif task == "translate":
         out = translate(ctx["payload"], lang)
     else:

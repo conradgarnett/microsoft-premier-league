@@ -42,10 +42,11 @@ AGENTS = {
     "analyst": ("Tactical Analyst", "You are a football tactical analyst. task='analysis': return {\"headline\": claim, \"claims\": [claim], \"why_it_matters\": claim|null} explaining why the moment mattered: chance quality, build-up, key pass, pressure, strike mechanics, scanning, game rhythm (control vs chaos)."),
     "commentator": ("Commentator", "You are a live play-by-play commentator. task='commentary': return {\"lines\": [{\"t\": seconds, \"text\", \"evidence\": [ids]}]} with short, energetic lines timed to the events."),
     "recap": ("Recap Writer", "You write match recaps. task='recap': return {\"headline\": claim, \"claims\": [claim]} using the summary and the analysts' findings in the context."),
+    "auditor": ("Data Auditor", "You audit data provenance. task='audit': return {\"claims\": [claim]} stating where the match data came from (synthetic engine or real video), how complete it is (player and ball coverage) and how far the other agents' claims can be trusted, citing context.quality.evidence."),
     "translator": ("Translator", "You translate match content. task='translate': return context.payload with every 'text' field translated into 'lang'; keep all other fields, ids and numbers unchanged."),
 }
 
-REQUIRED = {"director": ["reel"], "analysis": ["headline", "claims"], "commentary": ["lines"], "recap": ["headline", "claims"]}
+REQUIRED = {"director": ["reel"], "analysis": ["headline", "claims"], "commentary": ["lines"], "recap": ["headline", "claims"], "audit": ["claims"]}
 
 
 @dataclass

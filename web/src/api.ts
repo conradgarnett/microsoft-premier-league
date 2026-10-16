@@ -72,6 +72,7 @@ export interface Insights {
   director: { reel: ReelItem[] };
   moments: Record<string, { analysis: { headline: Claim; claims: Claim[]; why_it_matters: Claim | null }; commentary: { lines: (Claim & { t: number })[] } }>;
   recap: { headline: Claim; claims: Claim[] };
+  audit?: { claims: Claim[] };
   trace: { agent: string; task: string; sender: string; provider: string; attempt: number; status: string; ms?: number; error?: string }[];
 }
 

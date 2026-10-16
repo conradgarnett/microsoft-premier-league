@@ -42,6 +42,8 @@ def test_orchestrator_offline(tools, mid, mode, lang):
     valid = tools.valid_event_ids(mid)
     check_evidence(out["moments"], valid)
     check_evidence(out["recap"], valid)
+    check_evidence(out["audit"], valid)
+    assert out["audit"]["claims"] and "Data Auditor" in {t["agent"] for t in out["trace"]}
     assert out["director"]["reel"]
     assert len(out["moments"]) == len(tools.report(mid)["key_moments"])
     agents = {t["agent"] for t in out["trace"]}

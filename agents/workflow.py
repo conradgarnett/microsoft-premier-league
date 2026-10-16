@@ -5,7 +5,8 @@
 * Director: the Replay Director agent picks the reel, then fans out one job per key moment.
 * Moment: Tactical Analyst and Commentator run in parallel on the moment's tool context.
 * Recap: fan-in; once every moment has reported, the Recap Writer reads the analysts'
-  findings from the shared ``MatchState`` and writes the match recap.
+  findings from the shared ``MatchState`` and writes the match recap while the Data Auditor
+  (in parallel) states provenance and coverage of the data behind every claim.
 * Translator: renders everything in the requested language and yields the workflow output.
 
 Agent calls go through ``Orchestrator.call`` (JSON contract, evidence validation, retry,
@@ -115,7 +116,10 @@ class RecapExecutor(Executor):
         if st.focus:
             rctx["focus_stats"] = t.get_player_stats(st.match_id, st.focus)
             rctx["focus_evidence"] = [e["id"] for e in t.get_events(st.match_id, limit=200) if e.get("player_id") == st.focus][:5]
-        st.outputs["recap"] = await self.orc.call(st, "recap", "recap", rctx, sender="Tactical Analyst")
+        st.outputs["recap"], st.outputs["audit"] = await asyncio.gather(
+            self.orc.call(st, "recap", "recap", rctx, sender="Tactical Analyst"),
+            self.orc.call(st, "auditor", "audit", {"quality": t.get_data_quality(st.match_id)}, sender="Tactical Analyst"),
+        )
         await ctx.send_message(RecapReady(st))
 
 
@@ -128,9 +132,9 @@ class TranslatorExecutor(Executor):
     async def finish(self, msg: RecapReady, ctx: WorkflowContext[None, dict]) -> None:
         st = msg.state
         if st.lang != "en":
-            payload = {"moments": st.outputs["moments"], "recap": st.outputs["recap"]}
+            payload = {"moments": st.outputs["moments"], "recap": st.outputs["recap"], "audit": st.outputs["audit"]}
             tr = await self.orc.call(st, "translator", "translate", {"payload": payload}, lang=st.lang, sender="Recap Writer")
-            st.outputs["moments"], st.outputs["recap"] = tr["moments"], tr["recap"]
+            st.outputs["moments"], st.outputs["recap"], st.outputs["audit"] = tr["moments"], tr["recap"], tr["audit"]
         await ctx.yield_output(
             {
                 "match_id": st.match_id,
@@ -141,6 +145,7 @@ class TranslatorExecutor(Executor):
                 "director": st.outputs["director"],
                 "moments": st.outputs["moments"],
                 "recap": st.outputs["recap"],
+                "audit": st.outputs["audit"],
                 "trace": st.trace,
             }
         )

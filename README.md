@@ -22,7 +22,7 @@ seeded match engine. Body motion comes from real motion capture (CMU mocap datab
 |---|---|
 | **Ingest** | Seeded 25 fps match engine emits events (pass, carry, shot, goal, save, tackle, interception, pressure, foul, restarts, possession changes), tracking and 3D skeletons. The API streams it "live" over WebSocket at any speed. |
 | **Interpret** | `analytics/`: geometric xG, pass difficulty from tracking (pressure, lane, receiver space), progressive passes, possession, PPDA, field tilt, defensive line height, sprints and distance, control-vs-chaos index, pressure maps, joint angles, scanning, key-moment ranking. |
-| **Explain** | Five Microsoft Agent Framework agents (Replay Director, Tactical Analyst, Commentator, Recap Writer, Translator) over a shared match state; every claim must cite real event ids. |
+| **Explain** | Six Microsoft Agent Framework agents (Replay Director, Tactical Analyst, Commentator, Recap Writer, Data Auditor, Translator) over a shared match state; every claim must cite real event ids. |
 | **Render** | React + three.js viewer: scorebug, live ticker, key-moment timeline, 3D replay with timed, machine-readable overlays and agent captions. |
 | **Personalise** | Analyst vs Fan modes (different agent output, overlays and stats), favourite-player focus (ring, player cam, focus paragraph in the recap), English/Spanish/French/Portuguese. |
 
@@ -38,14 +38,16 @@ flowchart LR
   end
   STORE --> AN[analytics/<br/>xG, PPDA, chaos index,<br/>joint angles, key moments]
   AN --> TOOLS[agents/tools.py]
-  TOOLS --> MCP[mcp_server/<br/>MCP: get_events, get_key_moments,<br/>get_player_stats, get_skeleton_window,<br/>get_pressure_map]
+  TOOLS --> MCP[mcp_server/<br/>MCP: get_events, get_key_moments,<br/>get_player_stats, get_skeleton_window,<br/>get_pressure_map, get_data_quality]
   subgraph Agents [Microsoft Agent Framework]
     ORC{{Orchestrator<br/>shared MatchState,<br/>validation, retry, fallback}}
     ORC --> DIR[Replay Director]
     DIR --> ANA[Tactical Analyst]
     DIR --> COM[Commentator]
     ANA --> REC[Recap Writer]
+    ANA --> AUD[Data Auditor]
     REC --> TRA[Translator]
+    AUD --> TRA
   end
   TOOLS --> ORC
   MCP -. MCPStdioTool .-> Agents

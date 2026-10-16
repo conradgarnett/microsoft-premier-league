@@ -4,10 +4,10 @@ import RhythmChart from "./RhythmChart";
 
 type Tab = "moment" | "recap" | "agents";
 const UI: Record<string, Record<string, string>> = {
-  en: { buildup: "build-up", importance: "importance", moment: "Moment", recap: "Recap", agents: "Agents", why: "Why it matters", passes: "Passes in this replay", stats: "Match stats", loading: "Agents are analysing…" },
-  es: { buildup: "jugadas previas", importance: "importancia", moment: "Jugada", recap: "Crónica", agents: "Agentes", why: "Por qué importa", passes: "Pases en esta repetición", stats: "Estadísticas", loading: "Los agentes están analizando…" },
-  fr: { buildup: "construction", importance: "importance", moment: "Action", recap: "Résumé", agents: "Agents", why: "Pourquoi c'est important", passes: "Passes de ce ralenti", stats: "Statistiques", loading: "Les agents analysent…" },
-  pt: { buildup: "construção", importance: "importância", moment: "Lance", recap: "Resumo", agents: "Agentes", why: "Por que importa", passes: "Passes neste replay", stats: "Estatísticas", loading: "Os agentes estão analisando…" },
+  en: { provenance: "Where this data comes from", buildup: "build-up", importance: "importance", moment: "Moment", recap: "Recap", agents: "Agents", why: "Why it matters", passes: "Passes in this replay", stats: "Match stats", loading: "Agents are analysing…" },
+  es: { provenance: "De dónde vienen los datos", buildup: "jugadas previas", importance: "importancia", moment: "Jugada", recap: "Crónica", agents: "Agentes", why: "Por qué importa", passes: "Pases en esta repetición", stats: "Estadísticas", loading: "Los agentes están analizando…" },
+  fr: { provenance: "D'où viennent les données", buildup: "construction", importance: "importance", moment: "Action", recap: "Résumé", agents: "Agents", why: "Pourquoi c'est important", passes: "Passes de ce ralenti", stats: "Statistiques", loading: "Les agents analysent…" },
+  pt: { provenance: "De onde vêm os dados", buildup: "construção", importance: "importância", moment: "Lance", recap: "Resumo", agents: "Agentes", why: "Por que importa", passes: "Passes neste replay", stats: "Estatísticas", loading: "Os agentes estão analisando…" },
 };
 
 function ClaimRow({ c, analyst, onSeek }: { c: Claim; analyst: boolean; onSeek: (id: string) => void }) {
@@ -26,7 +26,7 @@ function ClaimRow({ c, analyst, onSeek }: { c: Claim; analyst: boolean; onSeek: 
   );
 }
 
-const PIPELINE = ["Replay Director", "Tactical Analyst", "Commentator", "Recap Writer", "Translator"];
+const PIPELINE = ["Replay Director", "Tactical Analyst", "Commentator", "Recap Writer", "Data Auditor", "Translator"];
 
 export default function InsightPanel(props: {
   insights: Insights | null; moment: KeyMoment | null; mode: "fan" | "analyst"; lang: string; replay: Replay;
@@ -93,6 +93,14 @@ export default function InsightPanel(props: {
               <ul className="claims">
                 {insights.recap.claims.map((c, i) => <ClaimRow key={i} c={c} analyst={analyst} onSeek={seek} />)}
               </ul>
+              {insights.audit && (
+                <>
+                  <h4>{ui.provenance}</h4>
+                  <ul className="claims">
+                    {insights.audit.claims.map((c, i) => <ClaimRow key={i} c={c} analyst={analyst} onSeek={seek} />)}
+                  </ul>
+                </>
+              )}
             </>
           )}
           {metrics && metrics.rhythm?.length > 0 && (

@@ -78,4 +78,10 @@ def build_server(tools: MatchTools | None = None) -> MCPServer:
         """Grid counts of pressure events per team (each team attacking to the right)."""
         return tools.get_pressure_map(match_id, team_id)
 
+    @server.tool()
+    @_clean_errors
+    def get_data_quality(match_id: str) -> dict[str, Any]:
+        """Data provenance: synthetic or video, player/ball coverage, how many events were detected from video."""
+        return tools.get_data_quality(match_id)
+
     return server

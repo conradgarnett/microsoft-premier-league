@@ -115,9 +115,25 @@ class MatchTools:
             "home_team_id": m.meta.home_team_id,
         }
 
+    def get_data_quality(self, match_id: str) -> dict[str, Any]:
+        """Where the data came from and how complete it is: source, coverage of players and ball, event provenance."""
+        m = self.repo.match(match_id)
+        out: dict[str, Any] = {"source": m.meta.source, "seed": m.meta.seed, "duration_s": m.meta.duration_s, "n_events": len(m.events)}
+        detected = [e.id for e in m.events if e.attributes.get("detected") == "vision"]
+        out["detected_events"] = len(detected)
+        out["evidence"] = (detected or [e.id for e in m.events if e.type.value in ("pass", "shot")])[:3]
+        if m.meta.source == "video" and m.windows:
+            w = self.repo.window(match_id, m.windows[0].id)
+            sk = np.asarray(self.repo.skeleton(match_id, m.windows[0].id).frames)
+            out["ball_known_pct"] = round(100 * float((np.asarray(w.ball)[:, 2] > -1).mean()), 1)
+            out["player_visible_pct"] = round(100 * float((sk[:, :, 0, 2] > -1).mean()), 1)
+            out["tracked_players"] = len(w.player_ids)
+            out["skeleton_source"] = self.repo.skeleton(match_id, m.windows[0].id).source
+        return out
+
     def valid_event_ids(self, match_id: str) -> set[str]:
         return {e.id for e in self.repo.match(match_id).events}
 
     def public_tools(self) -> list:
         """Callables exposed to LLM agents and the MCP server."""
-        return [self.get_match_summary, self.get_events, self.get_key_moments, self.get_player_stats, self.get_skeleton_window, self.get_pressure_map]
+        return [self.get_match_summary, self.get_events, self.get_key_moments, self.get_player_stats, self.get_skeleton_window, self.get_pressure_map, self.get_data_quality]
