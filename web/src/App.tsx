@@ -1,6 +1,7 @@
 import { Canvas } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, getInsights, type Insights, type KeyMoment, type MatchEvent, type MatchInfo, type Replay } from "./api";
+import { tr } from "./i18n";
 import InsightPanel from "./InsightPanel";
 import Pitch from "./replay/Pitch";
 import LiveScene, { type LiveFeed } from "./replay/LiveScene";
@@ -8,11 +9,9 @@ import ReplayScene, { EventOverlays, type CameraMode, type Clock, type Overlays 
 
 type Mode = "fan" | "analyst";
 const fmtClock = (t: number) => `${Math.floor(t / 60)}'${String(Math.floor(t % 60)).padStart(2, "0")}`;
-const KIND_LABEL: Record<KeyMoment["kind"], string> = { goal: "Goal", big_chance: "Big chance", save: "Save", shot: "Shot" };
 
-const OVERLAY_LABELS: [keyof Overlays, string][] = [
-  ["passes", "Pass lines"], ["pressure", "Pressure"], ["defLine", "Def. line"], ["sprints", "Sprint trails"],
-  ["speeds", "Speeds"], ["angles", "Body angles"], ["tags", "Name tags"],
+const OVERLAY_KEYS: [keyof Overlays, string][] = [
+  ["passes", "passes"], ["pressure", "pressureOv"], ["defLine", "defLine"], ["sprints", "sprints"], ["speeds", "speeds"], ["angles", "angles"], ["tags", "tags"],
 ];
 const DEFAULT_OVERLAYS: Record<Mode, Overlays> = {
   analyst: { passes: true, pressure: true, defLine: true, sprints: true, speeds: true, angles: true, tags: true },
@@ -154,12 +153,12 @@ export default function App() {
         <div className="brand">Tactical Replay <small>{info.meta.source === "video" ? `real footage · tracked from video · motion ${replay.skeleton.source === "video-mocap" ? "mocap on real tracks" : "single-view pose lift"}` : "synthetic league"} · {info.meta.match_id}</small></div>
         <div className="controls-top">
           <div className="seg">
-            <button className={view === "live" ? "on" : ""} onClick={() => setView("live")}>Live</button>
-            <button className={view === "replay" ? "on" : ""} onClick={() => setView("replay")}>3D Replay</button>
+            <button className={view === "live" ? "on" : ""} onClick={() => setView("live")}>{tr(lang, "live")}</button>
+            <button className={view === "replay" ? "on" : ""} onClick={() => setView("replay")}>{tr(lang, "replay")}</button>
           </div>
           <div className="seg">
             {(["fan", "analyst"] as Mode[]).map((m) => (
-              <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode2(m)}>{m === "fan" ? "Fan" : "Analyst"}</button>
+              <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode2(m)}>{tr(lang, m)}</button>
             ))}
           </div>
           <select value={lang} onChange={(e) => setLang(e.target.value)} aria-label="Language">
@@ -169,7 +168,7 @@ export default function App() {
             <option value="pt">Português</option>
           </select>
           <select value={focusId ?? ""} onChange={(e) => setFocusId(e.target.value || null)} aria-label="Focus player">
-            <option value="">Focus player…</option>
+            <option value="">{tr(lang, "focus")}</option>
             {info.teams.map((t) => (
               <optgroup key={t.id} label={t.name}>
                 {t.players.map((p) => <option key={p.id} value={p.id}>{p.number} {p.name}</option>)}
@@ -193,30 +192,30 @@ export default function App() {
               </>
             )}
           </Canvas>
-          {loading && view === "replay" && <div className="loading">Loading replay…</div>}
+          {loading && view === "replay" && <div className="loading">{tr(lang, "loadingReplay")}</div>}
           {view === "live" && toast && (
             <button className="toast" onClick={() => { setMoment(toast); setView("replay"); setToast(null); }}>
-              <span>{KIND_LABEL[toast.kind]} · {toast.minute}'</span>
+              <span>{tr(lang, toast.kind)} · {toast.minute}'</span>
               <b>{toast.title}</b>
-              <em>Watch the 3D replay ▸</em>
+              <em>{tr(lang, "watch")}</em>
             </button>
           )}
           {view === "replay" && <div className="cams">
             {(["director", "broadcast", "behind", "player", "orbit"] as CameraMode[]).map((c) => (
               <button key={c} className={camera === c ? "on" : ""} onClick={() => setCamera(c)}>
-                {{ director: "Director", broadcast: "Broadcast", behind: "Behind ball", player: "Player cam", orbit: "Orbit" }[c]}
+                {tr(lang, c)}
               </button>
             ))}
           </div>}
           {view === "replay" && <div className="overlay-toggles">
-            {OVERLAY_LABELS.map(([k, label]) => (
-              <label key={k}><input type="checkbox" checked={overlays[k]} onChange={() => setOverlays({ ...overlays, [k]: !overlays[k] })} /> {label}</label>
+            {OVERLAY_KEYS.map(([k, label]) => (
+              <label key={k}><input type="checkbox" checked={overlays[k]} onChange={() => setOverlays({ ...overlays, [k]: !overlays[k] })} /> {tr(lang, label)}</label>
             ))}
           </div>}
           {view === "replay" && moment && (
             <div className="lower-third" style={{ borderColor: shooter?.color_primary }}>
-              <div className="kind">{KIND_LABEL[moment.kind]} · {moment.minute}'</div>
-              <div className="title">{moment.title}</div>
+              <div className="kind">{tr(lang, moment.kind)} · {moment.minute}'</div>
+              <div className="title">{moment.player_id && names[moment.player_id] ? `${tr(lang, moment.kind)} – ${names[moment.player_id]} (${shooter?.short_name ?? ""})` : moment.title}</div>
             </div>
           )}
           {view === "replay" && caption && <div className="caption">{caption.text}</div>}
@@ -225,7 +224,7 @@ export default function App() {
               <div key={e.id} className={`tick ${e.type}`}>
                 <span className="t">{fmtClock(e.t)}</span>
                 <span className="dot" style={{ background: e.team_id ? teamById[e.team_id]?.color_primary : "#888" }} />
-                {e.type.replace("_", " ")} {e.player_id ? names[e.player_id] : ""}
+                {tr(lang, e.type)} {e.player_id ? names[e.player_id] : ""}
                 {mode === "analyst" && <span className="evid">{e.id}</span>}
               </div>
             ))}
@@ -239,14 +238,14 @@ export default function App() {
       <footer className="bottom">
         {view === "live" ? (
           <div className="transport">
-            <span className="tc">Feed speed</span>
+            <span className="tc">{tr(lang, "feedSpeed")}</span>
             <div className="seg">
               {[5, 20, 60].map((sp) => (
                 <button key={sp} className={liveSpeed === sp ? "on" : ""} onClick={() => setLiveSpeed(sp)}>{sp}×</button>
               ))}
             </div>
-            <button onClick={() => { liveTRef.current = 0; setLiveEvents([]); setLiveT(0); setLiveSession((n) => n + 1); }}>Restart match</button>
-            <span className="tc">{evSource.length} events received</span>
+            <button onClick={() => { liveTRef.current = 0; setLiveEvents([]); setLiveT(0); setLiveSession((n) => n + 1); }}>{tr(lang, "restart")}</button>
+            <span className="tc">{evSource.length} {tr(lang, "received")}</span>
           </div>
         ) : (
         <div className="transport">
@@ -260,7 +259,7 @@ export default function App() {
               <button key={r} className={clock.rate === r ? "on" : ""} onClick={() => { clock.rate = r; force((n) => n + 1); }}>{r}×</button>
             ))}
           </div>
-          <label className="auto"><input type="checkbox" checked={clock.autoSlow} onChange={() => { clock.autoSlow = !clock.autoSlow; force((n) => n + 1); }} /> auto slow-mo</label>
+          <label className="auto"><input type="checkbox" checked={clock.autoSlow} onChange={() => { clock.autoSlow = !clock.autoSlow; force((n) => n + 1); }} /> {tr(lang, "autoSlow")}</label>
         </div>
         )}
         <div className="timeline">

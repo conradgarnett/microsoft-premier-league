@@ -4,10 +4,10 @@ import RhythmChart from "./RhythmChart";
 
 type Tab = "moment" | "recap" | "agents";
 const UI: Record<string, Record<string, string>> = {
-  en: { moment: "Moment", recap: "Recap", agents: "Agents", why: "Why it matters", passes: "Passes in this replay", stats: "Match stats", loading: "Agents are analysing…" },
-  es: { moment: "Jugada", recap: "Crónica", agents: "Agentes", why: "Por qué importa", passes: "Pases en esta repetición", stats: "Estadísticas", loading: "Los agentes están analizando…" },
-  fr: { moment: "Action", recap: "Résumé", agents: "Agents", why: "Pourquoi c'est important", passes: "Passes de ce ralenti", stats: "Statistiques", loading: "Les agents analysent…" },
-  pt: { moment: "Lance", recap: "Resumo", agents: "Agentes", why: "Por que importa", passes: "Passes neste replay", stats: "Estatísticas", loading: "Os agentes estão analisando…" },
+  en: { buildup: "build-up", importance: "importance", moment: "Moment", recap: "Recap", agents: "Agents", why: "Why it matters", passes: "Passes in this replay", stats: "Match stats", loading: "Agents are analysing…" },
+  es: { buildup: "jugadas previas", importance: "importancia", moment: "Jugada", recap: "Crónica", agents: "Agentes", why: "Por qué importa", passes: "Pases en esta repetición", stats: "Estadísticas", loading: "Los agentes están analizando…" },
+  fr: { buildup: "construction", importance: "importance", moment: "Action", recap: "Résumé", agents: "Agents", why: "Pourquoi c'est important", passes: "Passes de ce ralenti", stats: "Statistiques", loading: "Les agents analysent…" },
+  pt: { buildup: "construção", importance: "importância", moment: "Lance", recap: "Resumo", agents: "Agentes", why: "Por que importa", passes: "Passes neste replay", stats: "Estatísticas", loading: "Os agentes estão analisando…" },
 };
 
 function ClaimRow({ c, analyst, onSeek }: { c: Claim; analyst: boolean; onSeek: (id: string) => void }) {
@@ -53,8 +53,8 @@ export default function InsightPanel(props: {
         <>
           <div className="stats">
             <div><b>{moment.xg.toFixed(2)}</b><span>xG</span></div>
-            <div><b>{moment.build_up_event_ids.length}</b><span>build-up</span></div>
-            <div><b>#{moment.rank}</b><span>importance</span></div>
+            <div><b>{moment.build_up_event_ids.length}</b><span>{ui.buildup}</span></div>
+            <div><b>#{moment.rank}</b><span>{ui.importance}</span></div>
           </div>
           {!m && <p className="muted">{ui.loading}</p>}
           {m && (
