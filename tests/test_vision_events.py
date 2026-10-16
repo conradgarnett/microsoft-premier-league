@@ -57,3 +57,15 @@ def test_ball_select_prefers_detector_then_tracks_motion():
     cands[2] = np.array([[0, 0, 5, 90.0, 30.0]])  # 30 m jump in one frame: rejected
     xy, conf = select(prior, cands, dets)
     assert conf[0] == 0.9 and conf[1] == 0.8 and conf[2] == 0.2
+
+
+def test_ball_smoothing_ignores_prior_frames():
+    from vision.ball import select
+
+    F = 7
+    prior = np.tile([10.0, 10.0], (F, 1))
+    cands = [np.zeros((0, 5)) for _ in range(F)]
+    dets = [np.zeros((0, 5)) for _ in range(F)]
+    dets[3] = np.array([[0, 0, 0.9, 20.0, 10.0]])  # one confident hit 10 m from a prior-only neighbourhood
+    xy, conf = select(prior, cands, dets)
+    assert np.allclose(xy[3], [20.0, 10.0]) and np.allclose(xy[2], prior[2])

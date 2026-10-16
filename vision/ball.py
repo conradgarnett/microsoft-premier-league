@@ -142,11 +142,13 @@ def select(prior: np.ndarray, cands: list[np.ndarray], dets: list[np.ndarray] | 
             if d[k] < (4.0 + 25.0 * (f - last[0]) / fps if recent else gate_m):  # ball moves <= ~25 m/s
                 xy[f], conf[f] = c[k, 3:5], 0.8
                 last = (f, xy[f])
-    # smooth: short median filter, then hold measured points between gaps
-    k = 5
-    pad = np.pad(xy, ((k // 2, k // 2), (0, 0)), mode="edge")
-    xy = np.stack([np.median(pad[i : i + k], axis=0) for i in range(F)])
-    return xy, conf
+    # smooth measured points only (median of measured neighbours within +-2 frames); prior frames stay as they are
+    meas = conf > 0.5
+    out = xy.copy()
+    for f in np.where(meas)[0]:
+        nb = [g for g in range(max(0, f - 2), min(F, f + 3)) if meas[g]]
+        out[f] = np.median(xy[nb], axis=0)
+    return out, conf
 
 
 def main() -> None:
@@ -201,7 +203,9 @@ def main() -> None:
         process(len(cands))
     prior = prior_xy(fc, cam, dirs[np.clip(np.round(np.array(ts) * a.src_fps).astype(int), 0, len(dirs) - 1)])
     xy, conf = select(prior, cands, dets)
-    np.savez_compressed(a.out, t=np.array(ts) - meta["start"], xy=xy, conf=conf, prior=prior, n_cands=np.array([len(c) for c in cands]))
+    stack = lambda L: np.concatenate([np.c_[np.full(len(c), f), c] for f, c in enumerate(L)]) if L else np.zeros((0, 6))  # noqa: E731
+    # candidates are saved so selection can be re-run without decoding the clip again
+    np.savez_compressed(a.out, t=np.array(ts) - meta["start"], xy=xy, conf=conf, prior=prior, n_cands=np.array([len(c) for c in cands]), cands=stack(cands), dets=stack(dets))
     print(f"ball: {len(ts)} frames, {np.mean(conf > 0.85):.0%} detector, {np.mean(conf > 0.5):.0%} with any matched candidate, median candidates/frame {np.median([len(c) for c in cands]):.0f}")
 
 
