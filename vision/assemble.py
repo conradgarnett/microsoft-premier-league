@@ -35,7 +35,7 @@ from sim.skeleton import build_skeleton
 
 from .calibrate import PanoramaCamera
 from .events import detect_events
-from .pose import coco_to_schema, lift
+from .pose import coco_to_schema, lift, rigidify
 from .track import PitchTracker
 
 OUT_FPS = 25.0
@@ -141,6 +141,18 @@ def main() -> None:
             sk.append(lift(jp[0], g, cam_xy))
             cf.append(jc[0])
         joints[:, p], _ = resample(fr, np.array(sk), n_out, fps)
+        # facing from the smoothed track (held while slow), then rigid bones with recovered depth
+        vel = np.gradient(pos[:, p], 1 / OUT_FPS, axis=0)
+        vel = np.stack([np.convolve(np.pad(vel[:, i], 12, mode="edge"), np.ones(25) / 25, mode="valid") for i in range(2)], 1)
+        facing = np.zeros_like(vel)
+        cur = np.array([0.0, 1.0])
+        for f in range(n_out):
+            sp = np.linalg.norm(vel[f])
+            cur = vel[f] / sp if sp > 1.0 else cur
+            facing[f] = cur
+        rj = rigidify(joints[:, p], cam_xy, facing, scale=1.75 / 1.8)
+        rj[..., 2] -= (rj[:, 13:17, 2].min(axis=1) - 0.03)[:, None]  # lowest foot on the grass
+        joints[:, p] = rj
         joints[~seen, p, :, 2] = -5.0  # not observed: park the figure under the grass instead of inventing motion
         cnf, _ = resample(fr, np.array(cf), n_out, fps)
         conf[:, p] = cnf * seen[:, None]

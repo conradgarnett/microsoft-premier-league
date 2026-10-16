@@ -86,3 +86,38 @@ def lift(joints_px: np.ndarray, ground_xy: np.ndarray, cam_xy: np.ndarray, heigh
     out[:, :2] = ground_xy + dx[:, None] * right[None]
     out[:, 2] = np.maximum(dz + 0.07, 0)
     return out
+
+
+def rigidify(joints: np.ndarray, cam_xy: np.ndarray, facing: np.ndarray, scale: float = 1.0) -> np.ndarray:
+    """Planar lift (F,17,3) -> rigid 3D skeleton with recovered depth (Taylor's method).
+
+    A bone that looks shorter than its true length (CMU mocap lengths, scaled) is tilted
+    out of the image plane by sqrt(L^2 - l^2) along the camera ray. The sign comes from the
+    body: knees, toes, elbows, hands and a leaning trunk go towards the facing direction, shins trail the knee, left joints of the
+    hips and shoulders towards the body's left. Bones that look too long are shortened.
+    """
+    from sim.schema import J
+    from sim.skeleton import CHAIN, library
+
+    lengths = library()["bone_len"]
+    out = joints.copy()
+    ray = joints[:, J["pelvis"], :2] - cam_xy
+    ray /= np.linalg.norm(ray, axis=1, keepdims=True) + 1e-9
+    ray3 = np.concatenate([ray, np.zeros((len(ray), 1))], 1)
+    left = np.stack([-facing[:, 1], facing[:, 0]], 1)
+    fwd_sign = np.sign((facing * ray).sum(1))
+    left_sign = np.sign((left * ray).sum(1))
+    for a, b in CHAIN:
+        d = joints[:, J[b]] - joints[:, J[a]]  # in-plane bone as observed
+        L = lengths[(a, b)] * scale
+        n = np.linalg.norm(d, axis=1, keepdims=True) + 1e-9
+        d = np.where(n > L, d / n * L, d)
+        if a in ("pelvis", "neck") and b not in ("head", "neck"):
+            sign = left_sign * (1 if b.startswith("l_") else -1)
+        elif a.endswith("knee"):
+            sign = -fwd_sign  # shins trail the knee in a stride
+        else:
+            sign = fwd_sign
+        depth = np.sqrt(np.maximum(L**2 - (d**2).sum(1), 0))
+        out[:, J[b]] = out[:, J[a]] + d + (sign * depth)[:, None] * ray3
+    return out
