@@ -1,31 +1,64 @@
-"""Procedural 3D skeletons from tracking + body actions.
+"""3D skeletons from tracking + body actions, driven by real motion capture.
 
-Each player is a 17-joint figure (see ``schema.JOINT_NAMES``) driven by:
-  * a run cycle whose stride and amplitude scale with speed,
-  * keyframed actions from the engine (kick, tackle, goalkeeper dive, receive),
-  * head "scans" (quick shoulder checks), more frequent just before receiving,
-  * ground contact (the lowest foot is planted), which gives natural bounce.
+Locomotion, kicks, the shuffle and the keeper dive come from CMU Graphics Lab mocap
+clips (``sim/mocap/library.npz``, rebuilt by ``python -m sim.mocap.build_library``):
 
-Output is pitch-space metres, so analytics can compute joint angles exactly as it
-would from a real pose-estimation model.
+  * Locomotion blends phase-aligned walk/jog/run cycles by ground speed. The cycle phase
+    advances at ``speed / stride(speed)``, so foot cadence matches the tracked speed and
+    stance feet do not slide. Above the fastest captured run (4.45 m/s) the pose is
+    extrapolated along the jog->run trend and stride grows linearly.
+  * Players moving across their facing direction (e.g. defenders tracking the ball)
+    blend in a side-shuffle cycle; bodies face the velocity, or the ball when slow.
+  * Kicks, dives and slide tackles are one-shot clips cross-faded in over ~0.25 s and
+    time-aligned to the engine's action timestamps (ball contact).
+  * Turning at speed leans the body into the turn; heads make quick shoulder checks.
+  * Blended poses are re-projected onto fixed bone lengths, so bones stay rigid.
+
+Output is pitch-space metres in the source-agnostic ``SkeletonWindow`` schema.
 """
 
 from __future__ import annotations
 
+import json
+import pathlib
+from functools import lru_cache
+
 import numpy as np
 
-from .schema import BONES, J, SkeletonWindow, TrackingWindow
+from .schema import BONES, JOINT_NAMES, J, SkeletonWindow, TrackingWindow
 
-# Kick keyframes for the striking leg: (time rel. to contact s, hip flexion rad, knee flexion rad)
-_KICK_KEYS = np.array(
-    [
-        [-0.40, 0.10, 0.30],
-        [-0.14, -0.70, 1.75],
-        [0.00, 0.40, 0.30],
-        [0.20, 1.15, 0.30],
-        [0.36, 0.25, 0.30],
-    ]
-)
+LIB_PATH = pathlib.Path(__file__).with_name("mocap") / "library.npz"
+LIB_FPS = 60.0
+G = 9.81
+
+# parent -> child order for bone-length projection (root first)
+CHAIN = [
+    ("pelvis", "l_hip"), ("pelvis", "r_hip"), ("l_hip", "l_knee"), ("r_hip", "r_knee"),
+    ("l_knee", "l_ankle"), ("r_knee", "r_ankle"), ("l_ankle", "l_toe"), ("r_ankle", "r_toe"),
+    ("pelvis", "neck"), ("neck", "head"), ("neck", "l_shoulder"), ("neck", "r_shoulder"),
+    ("l_shoulder", "l_elbow"), ("r_shoulder", "r_elbow"), ("l_elbow", "l_wrist"), ("r_elbow", "r_wrist"),
+]  # fmt: skip
+MIRROR = [JOINT_NAMES.index(n.replace("l_", "#").replace("r_", "l_").replace("#", "r_")) for n in JOINT_NAMES]
+
+# Slide-tackle key pose (no tackle exists in the CMU set): local frame, facing +x, z up.
+TACKLE_POSE = np.array([
+    [-0.33, 0.0, 0.92], [-0.30, 0.0, 0.75], [-0.30, 0.19, 0.71], [-0.30, -0.19, 0.71],
+    [-0.45, 0.35, 0.45], [-0.20, -0.45, 0.65], [-0.55, 0.40, 0.20], [0.0, -0.60, 0.60],
+    [0.0, 0.0, 0.32], [0.0, 0.10, 0.30], [0.0, -0.10, 0.34], [0.25, 0.18, 0.08],
+    [0.42, -0.12, 0.22], [-0.15, 0.20, 0.06], [0.85, -0.12, 0.10], [-0.25, 0.20, 0.05], [1.0, -0.12, 0.14],
+])  # fmt: skip
+
+
+@lru_cache(maxsize=1)
+def library() -> dict:
+    d = np.load(LIB_PATH)
+    lib = {k: d[k] for k in d.files if k != "meta"}
+    lib["meta"] = json.loads(str(d["meta"]))
+    # ordered gentlest -> most powerful (the builder sorts by peak foot speed)
+    lib["kicks"] = [(lib[f"kick{i}_pose"], float(lib[f"kick{i}_contact"])) for i in range(len(lib["meta"]["kicks"]))]
+    idle = lib["idle_pose"]
+    lib["bone_len"] = {(a, b): float(np.linalg.norm(idle[:, J[b]] - idle[:, J[a]], axis=-1).mean()) for a, b in CHAIN}
+    return lib
 
 
 def _ema(x: np.ndarray, alpha: float) -> np.ndarray:
@@ -35,179 +68,220 @@ def _ema(x: np.ndarray, alpha: float) -> np.ndarray:
     return out
 
 
-def _envelope(n: int, f0: int, f1: int, ramp: int) -> np.ndarray:
-    """Weight 0..1 over frames [f0, f1) with smooth ramps."""
+def _envelope(n: int, f0: float, f1: float, ramp: float) -> np.ndarray:
+    """Weight over frames [f0, f1): smooth 0->1 ramp, hold, 1->0 ramp."""
     idx = np.arange(n)
-    w = np.clip(np.minimum(idx - f0 + 1, f1 - idx) / max(ramp, 1), 0, 1)
+    w = np.clip(np.minimum(idx - f0, f1 - idx) / max(ramp, 1e-6), 0, 1)
     return 0.5 - 0.5 * np.cos(np.pi * w)
 
 
+def _sample_cycle(cycle: np.ndarray, phase: np.ndarray) -> np.ndarray:
+    """cycle (S,17,3), phase (F,) in cycles -> (F,17,3) with linear interpolation and wrap."""
+    S = len(cycle)
+    x = (phase % 1.0) * S
+    i0 = np.floor(x).astype(int) % S
+    a = (x - np.floor(x))[:, None, None]
+    return cycle[i0] * (1 - a) + cycle[(i0 + 1) % S] * a
+
+
+def _sample_clip(clip: np.ndarray, frame: np.ndarray) -> np.ndarray:
+    f = np.clip(frame, 0, len(clip) - 1)
+    i0 = np.floor(f).astype(int)
+    i1 = np.minimum(i0 + 1, len(clip) - 1)
+    a = (f - i0)[:, None, None]
+    return clip[i0] * (1 - a) + clip[i1] * a
+
+
+def _limit_turn(target: np.ndarray, max_step: float) -> np.ndarray:
+    """Unwrapped yaw (F,P) that follows ``target`` but turns at most ``max_step`` rad per frame."""
+    out = np.empty_like(target)
+    out[0] = target[0]
+    for f in range(1, len(target)):
+        d = (target[f] - out[f - 1] + np.pi) % (2 * np.pi) - np.pi
+        out[f] = out[f - 1] + np.clip(d, -max_step, max_step)
+    return out
+
+
+def _rot_z(p: np.ndarray, ang: np.ndarray) -> np.ndarray:
+    c, s = np.cos(ang)[:, None], np.sin(ang)[:, None]
+    out = p.copy()
+    out[..., 0] = c * p[..., 0] - s * p[..., 1]
+    out[..., 1] = s * p[..., 0] + c * p[..., 1]
+    return out
+
+
+def _roll(p: np.ndarray, ang: np.ndarray) -> np.ndarray:
+    """Rotate local poses about the forward (x) axis through the ground point under the pelvis."""
+    c, s = np.cos(ang)[:, None], np.sin(ang)[:, None]
+    out = p.copy()
+    out[..., 1] = c * p[..., 1] - s * p[..., 2]
+    out[..., 2] = s * p[..., 1] + c * p[..., 2]
+    return out
+
+
+def _project_bones(p: np.ndarray, lengths: dict, scale: float) -> np.ndarray:
+    for a, b in CHAIN:
+        d = p[:, J[b]] - p[:, J[a]]
+        n = np.linalg.norm(d, axis=-1, keepdims=True) + 1e-9
+        p[:, J[b]] = p[:, J[a]] + d / n * lengths[(a, b)] * scale
+    return p
+
+
+def locomotion(speed: np.ndarray, lateral: np.ndarray, dt: float, rng: np.random.Generator) -> np.ndarray:
+    """Local-frame locomotion poses (F,17,3) for one player's speed profile."""
+    lib = library()
+    sp, stride, cyc = lib["loco_speed"], lib["loco_stride"], lib["loco_pose"]
+    F = len(speed)
+    v = speed
+    top = sp[-1]
+    stride_v = np.where(v <= top, np.interp(v, sp, stride), stride[-1] + 0.35 * (v - top))
+    phase = np.cumsum(v / np.maximum(stride_v, 0.3) * dt) + rng.uniform()
+    pose = np.zeros((F, 17, 3))
+    # blend between the two neighbouring cycles by speed
+    k = np.clip(np.searchsorted(sp, v) - 1, 0, len(sp) - 2)
+    a = np.clip((v - sp[k]) / (sp[k + 1] - sp[k]), 0, 1)
+    for i in range(len(sp) - 1):
+        m = k == i
+        if m.any():
+            pose[m] = (1 - a[m])[:, None, None] * _sample_cycle(cyc[i], phase[m]) + a[m][:, None, None] * _sample_cycle(cyc[i + 1], phase[m])
+    # faster than the fastest capture: extrapolate along the jog->run trend (more knee drive, lean)
+    hi = v > top
+    if hi.any():
+        ext = np.clip((v[hi] - top) / 3.5, 0, 1)[:, None, None] * 0.9
+        base = _sample_cycle(cyc[-1], phase[hi])
+        pose[hi] = base + ext * (base - _sample_cycle(cyc[-3], phase[hi]))
+    # slow: blend to idle (ping-pong over the 1 s idle capture)
+    idle = lib["idle_pose"]
+    t = np.arange(F) * dt * LIB_FPS + rng.uniform(0, len(idle))
+    pp = np.abs((t % (2 * (len(idle) - 1))) - (len(idle) - 1))
+    w_idle = np.clip(1 - v / sp[0], 0, 1)[:, None, None]
+    pose = (1 - w_idle) * pose + w_idle * _sample_clip(idle, pp)
+    # side-shuffle when travelling across the facing direction
+    sh_phase = np.cumsum(np.abs(lateral) / lib["shuffle_stride"] * dt)
+    sh = _sample_cycle(lib["shuffle_pose"], sh_phase)
+    lat_s = _ema(lateral, 0.25)
+    w_left = np.clip(0.5 + lat_s / 1.2, 0, 1)[:, None, None]  # cross-fade the mirrored cycle, never snap
+    sh = w_left * sh + (1 - w_left) * (sh[:, MIRROR] * np.array([1, -1, 1]))
+    w_sh = np.clip((np.abs(lat_s) / (speed + 1e-6) - 0.55) / 0.3, 0, 1) * np.clip(np.abs(lat_s) / 0.6, 0, 1) * (speed < 4.0)
+    w_sh = _ema(w_sh, 0.2)[:, None, None]
+    return (1 - w_sh) * pose + w_sh * sh
+
+
 def build_skeleton(win: TrackingWindow, heights: dict[str, float] | None = None, vision: dict[str, int] | None = None) -> SkeletonWindow:
+    lib = library()
     fps = win.fps
     dt = 1.0 / fps
     pos = np.asarray(win.players, float)  # (F,P,2)
     ball = np.asarray(win.ball, float)
     F, P, _ = pos.shape
-    pid_index = {pid: k for k, pid in enumerate(win.player_ids)}
-    scale = np.array([(heights or {}).get(pid, 1.8) / 1.8 for pid in win.player_ids])[None, :]
     rng = np.random.default_rng(sum(map(ord, win.id)) * 7919 + int(win.t_start * 10))
-
-    vel = np.gradient(pos, dt, axis=0)
-    vel = _ema(vel, 0.35)
+    vel = _ema(_ema(np.gradient(pos, dt, axis=0), 0.5), 0.5)
     speed = np.linalg.norm(vel, axis=-1)
-
-    # facing: movement direction when running, otherwise towards the ball
     to_ball = ball[:, None, :2] - pos
-    face = np.where((speed > 0.8)[..., None], vel, to_ball)
-    face = face / (np.linalg.norm(face, axis=-1, keepdims=True) + 1e-9)
+    tb = to_ball / (np.linalg.norm(to_ball, axis=-1, keepdims=True) + 1e-9)
+    vdir = vel / (speed[..., None] + 1e-9)
+    cosang = (vdir * tb).sum(-1)
+    # face the ball when slow, or when shuffling across it; otherwise face the run
+    across = (np.abs(cosang) < 0.55) & (speed < 3.5) & (np.linalg.norm(to_ball, axis=-1) < 25)
+    backpedal = (cosang < -0.6) & (speed < 2.2)
+    w_ball = np.clip(1 - (speed - 0.8) / 1.2, 0, 1)
+    w_ball = np.maximum(w_ball, (across | backpedal).astype(float))
+    face = w_ball[..., None] * tb + (1 - w_ball[..., None]) * vdir
+    pid_index = {pid: k for k, pid in enumerate(win.player_ids)}
 
-    # actions: per frame overrides
-    hip = np.zeros((F, P, 2))
-    knee = np.zeros((F, P, 2))
-    shoulder = np.zeros((F, P, 2))
-    elbow = np.zeros((F, P, 2))
-    abduct = np.full((F, P, 2), 0.12)
-    lean = 0.04 + 0.03 * np.clip(speed, 0, 9)
-    roll = np.zeros((F, P))
-    lateral = np.zeros((F, P))  # sideways body offset (keeper dives)
-    airborne = np.zeros((F, P))
-    head_off = np.zeros((F, P))
-
-    # run cycle
-    cycle_len = 1.5 + 0.22 * speed
-    phase = np.cumsum(speed * dt / cycle_len, axis=0) * 2 * np.pi + rng.uniform(0, 2 * np.pi, P)[None, :]
-    m = np.clip(speed / 2.0, 0, 1)
-    amp = np.clip(0.12 + 0.075 * speed, 0, 0.85)
-    for side, off in ((0, np.pi), (1, 0.0)):
-        ph = phase + off
-        hip[..., side] = m * amp * np.sin(ph)
-        knee[..., side] = 0.1 + m * (0.25 + 0.13 * np.clip(speed, 0, 9)) * (0.5 + 0.5 * np.sin(ph + 1.3))
-        shoulder[..., 1 - side] = -0.9 * m * amp * np.sin(ph)
-    elbow[:] = (0.35 + 0.9 * m)[..., None]
-
-    # body actions
+    actions_by_player: dict[int, list[dict]] = {}
     for act in win.actions:
         k = pid_index.get(act["player_id"])
-        if k is None:
-            continue
-        fa = (act["t"] - win.t_start) * fps
-        kind = act["kind"]
-        if kind == "kick":
-            leg = 0 if act.get("foot") == "left" else 1
-            power = float(act.get("power", 0.8))
-            f0, f1 = int(fa - 0.42 * fps), int(fa + 0.4 * fps)
-            w = _envelope(F, f0, f1, 3)
-            u = (np.arange(F) - fa) / fps
-            kh = np.interp(u, _KICK_KEYS[:, 0], _KICK_KEYS[:, 1]) * (0.6 + 0.4 * power)
-            kk = np.interp(u, _KICK_KEYS[:, 0], _KICK_KEYS[:, 2])
-            hip[:, k, leg] = (1 - w) * hip[:, k, leg] + w * kh
-            knee[:, k, leg] = (1 - w) * knee[:, k, leg] + w * kk
-            hip[:, k, 1 - leg] = (1 - w) * hip[:, k, 1 - leg] + w * 0.12
-            knee[:, k, 1 - leg] = (1 - w) * knee[:, k, 1 - leg] + w * 0.38
-            abduct[:, k, 1 - leg] = (1 - w) * abduct[:, k, 1 - leg] + w * 1.15
-            lean[:, k] = (1 - w) * lean[:, k] + w * (0.02 if act.get("shot") else 0.08)
-            # face where the ball goes
-            fi = int(np.clip(fa, 0, F - 1))
-            fj = int(np.clip(fa + 4, 0, F - 1))
-            d = ball[fj, :2] - ball[fi, :2]
-            if np.linalg.norm(d) > 0.3:
-                d = d / np.linalg.norm(d)
-                face[:, k] = (1 - w[:, None]) * face[:, k] + w[:, None] * d
-        elif kind == "tackle":
-            f0, f1 = int(fa - 0.1 * fps), int(fa + 0.75 * fps)
-            w = _envelope(F, f0, f1, 4)
-            hip[:, k, 1] = (1 - w) * hip[:, k, 1] + w * 1.35
-            knee[:, k, 1] = (1 - w) * knee[:, k, 1] + w * 0.1
-            hip[:, k, 0] = (1 - w) * hip[:, k, 0] + w * 0.35
-            knee[:, k, 0] = (1 - w) * knee[:, k, 0] + w * 1.5
-            lean[:, k] = (1 - w) * lean[:, k] + w * -0.55
-            abduct[:, k, :] = (1 - w[:, None]) * abduct[:, k, :] + w[:, None] * 0.7
-        elif kind == "dive":
-            f0, f1 = int(fa - 0.2 * fps), int(fa + 0.9 * fps)
-            w = _envelope(F, f0, f1, 5)
-            sgn = 1.0 if act.get("side") == "left" else -1.0
-            reach = float(np.clip(abs(act.get("dy", 1.5)), 0.5, 2.6))
-            roll[:, k] = w * sgn * 1.2
-            lateral[:, k] = w * sgn * reach * 0.6
-            airborne[:, k] = w
-            shoulder[:, k, :] = (1 - w[:, None]) * shoulder[:, k, :] + w[:, None] * 2.9
-            elbow[:, k, :] = (1 - w[:, None]) * elbow[:, k, :] + w[:, None] * 0.15
-        elif kind == "receive":
-            leg = 1
-            f0, f1 = int(fa - 0.12 * fps), int(fa + 0.18 * fps)
-            w = _envelope(F, f0, f1, 2)
-            hip[:, k, leg] = (1 - w) * hip[:, k, leg] + w * 0.35
-            knee[:, k, leg] = (1 - w) * knee[:, k, leg] + w * 0.55
-            # shoulder checks before receiving (more likely for high-vision players)
-            p_scan = (vision or {}).get(act["player_id"], 65) / 100
-            for _ in range(2):
-                if rng.random() < p_scan:
-                    ts = fa - rng.uniform(0.6, 2.4) * fps
-                    sw = _envelope(F, int(ts), int(ts + 0.38 * fps), 3)
-                    head_off[:, k] += sw * rng.choice([-1, 1]) * rng.uniform(0.9, 1.35)
+        if k is not None:
+            actions_by_player.setdefault(k, []).append(act)
+            if act["kind"] == "kick":
+                fc = (act["t"] - win.t_start) * fps
+                fi, fj = int(np.clip(fc, 0, F - 1)), int(np.clip(fc + 4, 0, F - 1))
+                d = ball[fj, :2] - ball[fi, :2]
+                if np.linalg.norm(d) > 0.3:
+                    w = _envelope(F, fc - 0.8 * fps, fc + 0.4 * fps, 0.3 * fps)
+                    face[:, k] = (1 - w[:, None]) * face[:, k] + w[:, None] * d / np.linalg.norm(d)
+    face = _ema(face, 0.25)
+    yaw = _limit_turn(np.arctan2(face[..., 1], face[..., 0]), 9.0 * dt)  # bodies turn at most ~9 rad/s
+    lateral = (vel * np.stack([-np.sin(yaw), np.cos(yaw)], -1)).sum(-1)
+    # path curvature (not body yaw) drives the lean, so turning on the spot stays upright
+    path_rate = _ema(np.gradient(np.unwrap(np.arctan2(vel[..., 1], vel[..., 0]), axis=0), dt, axis=0) * np.clip((speed - 1.5) / 2, 0, 1), 0.3)
 
-    # ambient scans
-    for k in range(P):
+    out = np.zeros((F, P, 17, 3))
+    kicks = lib["kicks"]
+    for p in range(P):
+        pid = win.player_ids[p]
+        scale = (heights or {}).get(pid, 1.8) / 1.8
+        local = locomotion(speed[:, p], lateral[:, p], dt, rng)
+        # lean into turns: centripetal tilt atan(v * omega / g)
+        lean = _ema(np.clip(np.arctan(speed[:, p] * path_rate[:, p] / G) * 0.8, -0.35, 0.35), 0.2)
+        local = _roll(local, lean)
+        root_off = np.zeros((F, 2))
+        for act in actions_by_player.get(p, []):
+            fc = (act["t"] - win.t_start) * fps
+            kind = act["kind"]
+            if kind == "kick":
+                power = float(act.get("power", 0.8))
+                h = sum(map(ord, act.get("event_id", "x")))
+                if act.get("shot"):
+                    clip, contact = kicks[-1 - h % 2]
+                else:
+                    clip, contact = kicks[min(int(power * len(kicks)), len(kicks) - 1) - h % 2]
+                if act.get("foot") == "left":
+                    clip = clip[:, MIRROR] * np.array([1, -1, 1])
+                frames = np.arange(F)
+                cf = contact + (frames - fc) * LIB_FPS / fps
+                pre = min(0.7, contact / LIB_FPS)
+                post = min(0.6, (len(clip) - contact) / LIB_FPS)
+                w = _envelope(F, fc - pre * fps, fc + post * fps, 0.25 * fps)[:, None, None]
+                kp = _sample_clip(clip, cf)
+                kp[..., :2] -= kp[:, J["pelvis"]][:, None, :2]  # tracking owns horizontal root motion
+                local = (1 - w) * local + w * kp
+            elif kind == "tackle":
+                w = _envelope(F, fc - 0.15 * fps, fc + 0.8 * fps, 0.22 * fps)[:, None, None]
+                local = (1 - w) * local + w * TACKLE_POSE[None]
+            elif kind == "dive":
+                clip = lib["dive_pose"]
+                peak = float(lib["dive_peak"])
+                left = act.get("side") == "left"
+                if not left:
+                    clip = clip[:, MIRROR] * np.array([1, -1, 1])
+                frames = np.arange(F)
+                cf = peak + (frames - fc) * LIB_FPS / fps * 0.8
+                w = _envelope(F, fc - 0.35 * fps, fc + 1.0 * fps, 0.15 * fps)
+                dp = _sample_clip(clip, cf)
+                reach = float(np.clip(abs(act.get("dy", 1.5)), 0.5, 2.6))
+                off = dp[:, J["pelvis"], :2].copy()
+                dp[..., :2] -= off[:, None, :]
+                root_off += w[:, None] * off * reach / 0.7
+                after = np.clip((frames - fc + 0.2 * fps) / (0.3 * fps), 0, 1)
+                dp = _roll(dp, (1 if left else -1) * 1.2 * after)
+                local = (1 - w[:, None, None]) * local + w[:, None, None] * dp
+        # head scans: quick yaw offsets of the head around the neck
+        head_off = np.zeros(F)
+        p_scan = (vision or {}).get(pid, 65) / 100
+        for act in actions_by_player.get(p, []):
+            if act["kind"] == "receive":
+                fa = (act["t"] - win.t_start) * fps
+                for _ in range(2):
+                    if rng.random() < p_scan:
+                        ts = fa - rng.uniform(0.6, 2.4) * fps
+                        head_off += _envelope(F, ts, ts + 0.4 * fps, 0.12 * fps) * rng.choice([-1, 1]) * rng.uniform(0.9, 1.3)
         t = rng.uniform(0, 3)
         while t < F / fps:
-            ts = t * fps
-            sw = _envelope(F, int(ts), int(ts + 0.32 * fps), 3)
-            head_off[:, k] += sw * rng.choice([-1, 1]) * rng.uniform(0.7, 1.2)
+            head_off += _envelope(F, t * fps, (t + 0.35) * fps, 0.1 * fps) * rng.choice([-1, 1]) * rng.uniform(0.7, 1.1)
             t += rng.uniform(2.0, 5.0)
+        hv = local[:, J["head"]] - local[:, J["neck"]]
+        local[:, J["head"]] = local[:, J["neck"]] + _rot_z(hv[:, None, :], head_off)[:, 0]
 
-    face = _ema(face, 0.3)
-    face = face / (np.linalg.norm(face, axis=-1, keepdims=True) + 1e-9)
-
-    # forward kinematics -------------------------------------------------------
-    up = np.array([0.0, 0.0, 1.0])
-    f3 = np.concatenate([face, np.zeros((F, P, 1))], axis=-1)
-    l3 = np.stack([-face[..., 1], face[..., 0], np.zeros((F, P))], axis=-1)
-    cr, sr = np.cos(roll)[..., None], np.sin(roll)[..., None]
-    leg_up = up * cr + l3 * sr  # body vertical after roll
-    lat = l3 * cr - up * sr  # body lateral after roll
-    cl, sl = np.cos(lean)[..., None], np.sin(lean)[..., None]
-    torso_up = leg_up * cl + f3 * sl
-    s = scale[..., None]
-
-    root = np.concatenate([pos, np.zeros((F, P, 1))], axis=-1) + lat * lateral[..., None]
-    pelvis = root + leg_up * 0.95 * s
-    out = np.zeros((F, P, 17, 3))
-    out[:, :, J["pelvis"]] = pelvis
-    neck = pelvis + torso_up * 0.52 * s
-    out[:, :, J["neck"]] = neck
-    hy = np.arctan2(face[..., 1], face[..., 0]) + head_off
-    gaze = np.stack([np.cos(hy), np.sin(hy), np.zeros_like(hy)], axis=-1)
-    out[:, :, J["head"]] = neck + torso_up * 0.17 * s + gaze * 0.07 * s
-
-    for side, name in ((0, "l"), (1, "r")):
-        sgn = 1.0 if side == 0 else -1.0
-        sh = neck + lat * sgn * 0.19 * s - torso_up * 0.04 * s
-        out[:, :, J[f"{name}_shoulder"]] = sh
-        a = shoulder[..., side][..., None]
-        ab = abduct[..., side][..., None]
-        d1 = (-torso_up * np.cos(a) + f3 * np.sin(a)) * np.cos(ab) + lat * sgn * np.sin(ab)
-        el = sh + d1 * 0.29 * s
-        out[:, :, J[f"{name}_elbow"]] = el
-        a2 = a + elbow[..., side][..., None]
-        d2 = (-torso_up * np.cos(a2) + f3 * np.sin(a2)) * np.cos(ab) + lat * sgn * np.sin(ab)
-        out[:, :, J[f"{name}_wrist"]] = el + d2 * 0.26 * s
-
-        hp = pelvis + lat * sgn * 0.1 * s
-        out[:, :, J[f"{name}_hip"]] = hp
-        h = hip[..., side][..., None]
-        kn = knee[..., side][..., None]
-        thigh = -leg_up * np.cos(h) + f3 * np.sin(h)
-        kp = hp + thigh * 0.45 * s
-        out[:, :, J[f"{name}_knee"]] = kp
-        shin = -leg_up * np.cos(h - kn) + f3 * np.sin(h - kn)
-        an = kp + shin * 0.44 * s
-        out[:, :, J[f"{name}_ankle"]] = an
-        out[:, :, J[f"{name}_toe"]] = an + f3 * 0.16 * s - leg_up * 0.04 * s
-
-    # ground contact: lowest foot joint rests at ~7 cm; airborne keepers float
-    low = np.minimum.reduce([out[:, :, J[j], 2] for j in ("l_ankle", "r_ankle", "l_toe", "r_toe")]) - 0.07
-    out[..., 2] -= (low * (1 - airborne) + airborne * (low - 0.25))[..., None]
-    out[..., 2] = np.maximum(out[..., 2], 0.0)
+        local = _project_bones(local * scale, lib["bone_len"], scale)
+        world = _rot_z(local, yaw[:, p])
+        c, s_ = np.cos(yaw[:, p]), np.sin(yaw[:, p])
+        off_w = np.stack([c * root_off[:, 0] - s_ * root_off[:, 1], s_ * root_off[:, 0] + c * root_off[:, 1]], 1)
+        world[..., :2] += (pos[:, p] + off_w)[:, None, :]
+        low = world[:, [J["l_ankle"], J["r_ankle"], J["l_toe"], J["r_toe"]], 2].min(axis=1)
+        world[..., 2] -= np.minimum(low - 0.03, 0)[:, None]  # never through the grass
+        out[:, p] = world
 
     return SkeletonWindow.model_construct(
         id=f"sk-{win.id}",
@@ -216,9 +290,9 @@ def build_skeleton(win: TrackingWindow, heights: dict[str, float] | None = None,
         t_start=win.t_start,
         fps=fps,
         n_frames=F,
-        joint_names=list(J.keys()),
+        joint_names=list(JOINT_NAMES),
         bones=list(BONES),
         player_ids=list(win.player_ids),
-        frames=np.round(out, 2).tolist(),
+        frames=np.round(out, 3).tolist(),
         confidence=None,
     )

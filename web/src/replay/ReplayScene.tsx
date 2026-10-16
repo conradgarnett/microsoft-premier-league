@@ -62,6 +62,8 @@ function Players({ replay, teams, clock, overlays, focusId }: Ctx) {
   const jointMesh = useRef<THREE.InstancedMesh>(null!);
   const tagRefs = useRef<(THREE.Group | null)[]>([]);
   const speedRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const tagDivs = useRef<(HTMLDivElement | null)[]>([]);
+  const { camera } = useThree();
   const ringRef = useRef<THREE.Mesh>(null!);
   const playerInfo = useMemo(() => {
     const byId = new Map(teams.flatMap((t) => t.players.map((p) => [p.id, { p, t }] as const)));
@@ -121,6 +123,9 @@ function Players({ replay, teams, clock, overlays, focusId }: Ctx) {
       }
       const g = tagRefs.current[p];
       if (g) g.position.set(J[0].x, J[0].y + 0.45, J[0].z);
+      // close-up cameras: hide tags that would fill the screen
+      const div = tagDivs.current[p];
+      if (div) div.style.visibility = camera.position.distanceTo(J[0]) < 12 ? "hidden" : "visible";
     }
     boneMesh.current.instanceMatrix.needsUpdate = true;
     headMesh.current.instanceMatrix.needsUpdate = true;
@@ -167,7 +172,7 @@ function Players({ replay, teams, clock, overlays, focusId }: Ctx) {
         playerInfo.map(({ p, t }, i) => (
           <group key={p.id} ref={(el) => (tagRefs.current[i] = el)}>
             <Html center distanceFactor={28} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-              <div className={`tag ${p.id === focusId ? "focus" : ""}`} style={{ borderColor: t.color_primary }}>
+              <div ref={(el) => (tagDivs.current[i] = el)} className={`tag ${p.id === focusId ? "focus" : ""}`} style={{ borderColor: t.color_primary }}>
                 <b>{p.number}</b> {p.short_name.split(" ").slice(-1)[0]}
                 <span ref={(el) => (speedRefs.current[i] = el)} className="spd" />
               </div>

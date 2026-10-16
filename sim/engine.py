@@ -758,9 +758,7 @@ class MatchSimulator:
                     back = self.to_world(np.array([1.0, 0]), 1 - shooter_team) - self.to_world(np.zeros(2), 1 - shooter_team)
                     self.ball[2] = 0.3
                     self.ball_vel = np.array([back[0] * 6, float(self.rng.normal(0, 5)), 0])
-                    self.pos[gk] = f.end[:2] + back * 0.8
                 else:
-                    self.pos[gk] = f.end[:2] + (self.to_world(np.array([1.0, 0]), 1 - shooter_team) - self.to_world(np.zeros(2), 1 - shooter_team)) * 0.8
                     self.set_possession(1 - shooter_team, ev)
                     self.give_ball(gk, delay=(2.0, 3.5))
                 self.flight = None
