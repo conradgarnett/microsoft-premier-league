@@ -39,6 +39,8 @@ class MatchTools:
             "match_id": match_id,
             "teams": [{"id": t.id, "name": t.name, "short_name": t.short_name, "formation": t.formation} for t in m.teams],
             "home_team_id": m.meta.home_team_id,
+            "source": m.meta.source,
+            "duration_s": m.meta.duration_s,
             "score": m.meta.final_score.model_dump(),
             "team_stats": r["teams"],
             "goals": [{"event_id": e.id, "minute": e.minute, "player_id": e.player_id, "team_id": e.team_id} for e in m.events if e.type.value == "goal"],

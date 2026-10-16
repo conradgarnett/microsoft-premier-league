@@ -59,6 +59,7 @@ T: dict[str, dict[str, str]] = {
     "f_why_miss": {"en": "Why it matters: a big chance that could have changed the game.", "es": "Por qué importa: una gran ocasión que pudo cambiar el partido.", "fr": "Pourquoi c'est important : une grosse occasion qui pouvait tout changer.", "pt": "Por que importa: uma grande chance que podia mudar o jogo."},
     "f_focus": {"en": "Your player {p} was involved in this move.", "es": "Tu jugador {p} participó en esta jugada.", "fr": "Votre joueur {p} a participé à l'action.", "pt": "Seu jogador {p} participou da jogada."},
     # recap ----------------------------------------------------------------------------
+    "r_clip": {"en": "Tracked from real footage: {n} passes and {pc} changes of possession in {s} seconds.", "es": "Seguimiento de vídeo real: {n} pases y {pc} cambios de posesión en {s} segundos.", "fr": "Suivi sur vidéo réelle : {n} passes et {pc} changements de possession en {s} secondes.", "pt": "Rastreado de vídeo real: {n} passes e {pc} trocas de posse em {s} segundos."},
     "r_head": {"en": "{home} {hs}-{as_} {away}", "es": "{home} {hs}-{as_} {away}", "fr": "{home} {hs}-{as_} {away}", "pt": "{home} {hs}-{as_} {away}"},
     "r_result_win": {"en": "{w} beat {l} {ws}-{ls}.", "es": "{w} venció a {l} por {ws}-{ls}.", "fr": "{w} bat {l} {ws}-{ls}.", "pt": "{w} venceu o {l} por {ws}-{ls}."},
     "r_result_draw": {"en": "{home} and {away} drew {hs}-{as_}.", "es": "{home} y {away} empataron {hs}-{as_}.", "fr": "{home} et {away} se neutralisent {hs}-{as_}.", "pt": "{home} e {away} empataram em {hs}-{as_}."},
@@ -184,7 +185,9 @@ def recap(ctx: dict, lang: str, mode: str, focus: str | None) -> dict:
     # goalless matches still need evidence: fall back to the biggest chances, then rhythm events
     goal_ids = [g["event_id"] for g in sm["goals"]] or [k["shot_event_id"] for k in ctx["top_moments"]][:3] or ctx["rhythm_evidence"][:3] or ctx.get("event_evidence", [])[:3]
     claims = []
-    if hs == as_:
+    if sm.get("source") == "video":  # a short real clip: describe what was tracked, not a "result"
+        claims.append(line("r_clip", ctx.get("event_evidence", [])[:3], lang, n=ctx.get("clip_counts", {}).get("pass", 0), pc=ctx.get("clip_counts", {}).get("possession_change", 0), s=round(sm["duration_s"])))
+    elif hs == as_:
         claims.append(line("r_result_draw", goal_ids, lang, home=teams[home], away=teams[away], hs=hs, as_=as_))
     else:
         w, l_ = (home, away) if hs > as_ else (away, home)

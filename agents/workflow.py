@@ -15,6 +15,7 @@ offline fallback), so every step is traced in ``MatchState.trace``.
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -109,6 +110,7 @@ class RecapExecutor(Executor):
             "rhythm_evidence": [e for b in report["rhythm"] for e in b["evidence"]],
             "pressure_evidence": [e["id"] for e in t.get_events(st.match_id, types=["pressure"], limit=5)],
             "event_evidence": [e["id"] for e in t.get_events(st.match_id, types=["pass", "shot", "possession_change"], limit=5)],
+            "clip_counts": Counter(e.type.value for e in t.repo.match(st.match_id).events),
         }
         if st.focus:
             rctx["focus_stats"] = t.get_player_stats(st.match_id, st.focus)

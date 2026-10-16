@@ -175,24 +175,42 @@ video-to-skeleton module (`vision/`) is built and validated on real video, never
 on synthetic skeletons. Real footage, frames and anything derived from it per player stay
 out of this repository.
 
-## Video-to-schema module (`vision/`, work in progress)
+## Video-to-schema module (`vision/`)
 
 `pip install -e ".[vision]"`. Turns a fixed wide-angle panorama recording into the same
-schema the viewer replays:
+schema the viewer replays (25 fps positions, events, 3D skeletons), so a real clip plays
+back in the 3D viewer and goes through the same analytics and agents as a synthetic match:
+
+```bash
+python -m vision.fetch <video url> <start_s> 60 cache/clip.mp4            # cache a 60 s segment (stream copy)
+python -m vision.calibrate landmarks.json frame.jpg cam.json               # once per venue
+python -m vision.extract cache/clip.mp4 cam.json <start_s> 60 cache/ex.npz # people + 2D pose
+python -m vision.ball cache/clip.mp4 cam.json followcam.json dirs.det cache/ex.npz cache/ball.npz
+python -m vision.assemble cache/ex.npz cam.json cache/matches --ball cache/ball.npz --motion lift
+DATA_DIR=cache/matches AUTOGENERATE=0 uvicorn api.main:app --port 8010
+```
 
 1. `vision.calibrate`: fits a camera model (shared position, per-half equirectangular or
    fisheye projection, pitch length/width) to a few manual landmarks (corners, goal posts,
    halfway line, points along touchlines). Residuals are in pixels, so scale cannot collapse.
 2. `vision.extract`: RT-DETR person detection (Apache-2.0, Hugging Face) on each half,
    ground positions through the calibration, torso colours, ViTPose 2D pose (Apache-2.0).
-3. `vision.assemble`: tracking on the ground plane (constant velocity + Hungarian
-   assignment, so tracks continue across the panorama seam), team split by torso colour,
-   25 fps resampling, a single-view 3D lift, and a match folder in the `sim` layout. Run
-   the API with `DATA_DIR` pointing at the output to replay it in the 3D viewer.
+3. `vision.ball`: the ball is 4-8 px. Candidates come from an RT-DETR pass on a
+   full-resolution crop around the recording's follow-cam direction (a coarse prior fit by
+   RANSAC) and from static-camera motion blobs; selection is gated by how far a ball can move.
+4. `vision.assemble`: ground-plane tracking (constant velocity + Hungarian assignment, so
+   tracks continue across the panorama seam), team split by torso colour, 25 fps
+   resampling, 3D skeletons, and a match folder in the `sim` layout. Skeletons are either
+   the observed pose (`--motion lift`: single-view lift with rigid bones and depth recovered
+   by Taylor's method) or CMU mocap placed on the real tracks (`--motion mocap`); the viewer
+   header says which.
+5. `vision.events`: control runs -> passes, possession changes, shots and goals from tracks
+   and ball. The same code runs on synthetic windows, where the engine's events are ground
+   truth: pass precision 0.93 / recall 0.82, 26 of 30 shots found (seed 7).
 
 Ultralytics/YOLO was avoided because it is AGPL-3.0; everything here is Apache-2.0/MIT/BSD.
-Expected local layout (git-ignored, never committed): `data/real/` for videos and outputs,
-`.cache/` for downloads.
+Real footage, frames, outputs and calibration files stay outside this repository
+(a git-ignored local cache); only aggregate, anonymous numbers are reported here.
 
 ## Repository layout
 
