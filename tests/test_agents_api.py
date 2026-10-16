@@ -111,3 +111,17 @@ def test_mcp_tools(tools, mid):
             assert bad.is_error
 
     asyncio.run(go())
+
+
+def test_orchestrator_without_key_moments(bundle, tmp_path):
+    # a short video clip: passes only, no shots -> no key moments, recap must still be evidenced
+    b = bundle.model_copy(deep=True)
+    b.match.events = [e for e in b.match.events if e.t < 60 and e.type.value in ("pass", "possession_change")]
+    b.match.meta.final_score.home = b.match.meta.final_score.away = 0
+    b.match.windows, b.windows = [], {}
+    write_bundle(b, tmp_path, skeletons=False)
+    t = MatchTools(MatchRepo(LocalStore(tmp_path)))
+    mid = b.match.meta.match_id
+    out = asyncio.run(Orchestrator(t).run(mid, "analyst", "en", None))
+    assert out["moments"] == {}
+    check_evidence(out["recap"], t.valid_event_ids(mid))

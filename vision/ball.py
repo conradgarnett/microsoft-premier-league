@@ -111,6 +111,7 @@ def main() -> None:
     """python -m vision.ball <video> <camera.json> <followcam.json> <directions.det> <extract.npz> <out.npz>"""
     import argparse
     import json
+    from collections import deque
 
     from .video import iter_frames
 
@@ -125,18 +126,28 @@ def main() -> None:
     ex = np.load(a.extract)
     meta = json.loads(str(ex["meta"]))
     fps = 25.0
-    grays, ts = [], []
-    for t, img in iter_frames(a.video, meta["start"], meta["duration"], fps):
-        grays.append(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY))
-        ts.append(t)
-    G = np.stack(grays)
-    cands = []
-    for f in range(len(G)):
-        lo, hi = max(0, f - 50), min(len(G), f + 50)  # +-2 s rolling background
-        bg = np.median(G[lo:hi:10], axis=0)
-        pf = int(round(f * meta["fps"] / fps))
+    # stream with a +-2 s ring buffer (a full 25 fps clip at 2048x2048 would need gigabytes)
+    half_win, step = 50, 10
+    buf: deque[np.ndarray] = deque()
+    ts: list[float] = []
+    cands: list[np.ndarray] = []
+
+    def process(f: int) -> None:
+        lo = max(0, f - half_win)
+        bg = np.median(np.stack([buf[i - (len(ts) - len(buf))] for i in range(lo, min(len(ts), f + half_win), step)]), axis=0)
+        pf = int(round((ts[f] - meta["start"]) * meta["fps"]))
         boxes = ex["box"][ex["frame"] == pf]
-        cands.append(candidates(G[f], bg, boxes, cam))
+        cands.append(candidates(buf[f - (len(ts) - len(buf))], bg, boxes, cam))
+
+    for t, img in iter_frames(a.video, meta["start"], meta["duration"], fps):
+        buf.append(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY))
+        ts.append(t)
+        while len(cands) < len(ts) - half_win:
+            process(len(cands))
+        while len(buf) > 2 * half_win + 1 and len(ts) - len(buf) < len(cands) - half_win:
+            buf.popleft()
+    while len(cands) < len(ts):
+        process(len(cands))
     prior = prior_xy(fc, cam, dirs[np.clip(np.round(np.array(ts) * a.src_fps).astype(int), 0, len(dirs) - 1)])
     xy, conf = select(prior, cands)
     np.savez_compressed(a.out, t=np.array(ts) - meta["start"], xy=xy, conf=conf, prior=prior, n_cands=np.array([len(c) for c in cands]))

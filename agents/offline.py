@@ -182,7 +182,7 @@ def recap(ctx: dict, lang: str, mode: str, focus: str | None) -> dict:
     hs, as_ = sm["score"]["home"], sm["score"]["away"]
     ts = sm["team_stats"]
     # goalless matches still need evidence: fall back to the biggest chances, then rhythm events
-    goal_ids = [g["event_id"] for g in sm["goals"]] or [k["shot_event_id"] for k in ctx["top_moments"]][:3] or ctx["rhythm_evidence"][:3]
+    goal_ids = [g["event_id"] for g in sm["goals"]] or [k["shot_event_id"] for k in ctx["top_moments"]][:3] or ctx["rhythm_evidence"][:3] or ctx.get("event_evidence", [])[:3]
     claims = []
     if hs == as_:
         claims.append(line("r_result_draw", goal_ids, lang, home=teams[home], away=teams[away], hs=hs, as_=as_))
@@ -195,15 +195,16 @@ def recap(ctx: dict, lang: str, mode: str, focus: str | None) -> dict:
     shot_ids = [k["shot_event_id"] for k in ctx["top_moments"]][:4]
     claims.append(line("r_xg", shot_ids, lang, home=teams[home], away=teams[away], hx=ts[home]["xg"], ax=ts[away]["xg"], better=teams[better]))
     dom = home if ts[home]["possession_pct"] >= ts[away]["possession_pct"] else away
-    claims.append(line("r_control", ctx["rhythm_evidence"][:3], lang, team=teams[dom], pct=ts[dom]["possession_pct"], tilt=ts[dom]["field_tilt_pct"]))
+    claims.append(line("r_control", ctx["rhythm_evidence"][:3] or ctx.get("event_evidence", [])[:3], lang, team=teams[dom], pct=ts[dom]["possession_pct"], tilt=ts[dom]["field_tilt_pct"]))
     if mode == "analyst":
         presser = min(teams, key=lambda t: ts[t]["ppda"])
         claims.append(line("r_press", ctx["pressure_evidence"][:3], lang, team=teams[presser], ppda=ts[presser]["ppda"]))
-        ch = max(ctx["rhythm"], key=lambda b: b["chaos_index"])
+        ch = max(ctx["rhythm"], key=lambda b: b["chaos_index"], default={"evidence": [], "t_start": 0, "chaos_index": 0})
         claims.append(line("r_chaos", ch["evidence"][:3], lang, m=int(ch["t_start"] // 60), c=ch["chaos_index"]))
     if focus and ctx.get("focus_stats"):
         f = ctx["focus_stats"]
         claims.append(line("r_focus", ctx.get("focus_evidence", [])[:3], lang, p=ctx["names"][focus], passes=f["passes"], comp=f["pass_completion_pct"], shots=f["shots"], km=f.get("distance_km", "?"), top=f.get("top_speed_kmh", "?")))
+    claims = [c for c in claims if c["evidence"]]  # short video clips lack shots / pressure events: drop unsupported claims
     return {"headline": line("r_head", goal_ids, lang, home=teams[home], away=teams[away], hs=hs, as_=as_), "claims": claims}
 
 

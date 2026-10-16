@@ -61,6 +61,8 @@ class DirectorExecutor(Executor):
         st.outputs["moments"] = {}
         for km in moments:
             await ctx.send_message(MomentJob(st, km, len(moments)))
+        if not moments:  # e.g. a short video clip without shots: go straight to the recap
+            await ctx.send_message(MomentJob(st, {}, 0))
 
 
 class MomentExecutor(Executor):
@@ -71,6 +73,9 @@ class MomentExecutor(Executor):
     @handler
     async def analyse(self, job: MomentJob, ctx: WorkflowContext[MomentDone]) -> None:
         st = job.state
+        if not job.moment:
+            await ctx.send_message(MomentDone(st, "", {}, 0))
+            return
         mctx = self.orc.tools.get_moment_context(st.match_id, job.moment["id"])
         analysis, commentary = await asyncio.gather(
             self.orc.call(st, "analyst", "analysis", mctx, sender="Replay Director"),
@@ -87,7 +92,8 @@ class RecapExecutor(Executor):
     @handler
     async def collect(self, done: MomentDone, ctx: WorkflowContext[RecapReady]) -> None:
         st = done.state
-        st.outputs["moments"][done.moment_id] = done.result
+        if done.moment_id:
+            st.outputs["moments"][done.moment_id] = done.result
         if len(st.outputs["moments"]) < done.total:
             return  # fan-in: wait for every moment
         t = self.orc.tools
@@ -102,6 +108,7 @@ class RecapExecutor(Executor):
             "rhythm": report["rhythm"],
             "rhythm_evidence": [e for b in report["rhythm"] for e in b["evidence"]],
             "pressure_evidence": [e["id"] for e in t.get_events(st.match_id, types=["pressure"], limit=5)],
+            "event_evidence": [e["id"] for e in t.get_events(st.match_id, types=["pass", "shot", "possession_change"], limit=5)],
         }
         if st.focus:
             rctx["focus_stats"] = t.get_player_stats(st.match_id, st.focus)

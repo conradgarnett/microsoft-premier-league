@@ -25,6 +25,7 @@ from sim.schema import (
     MatchMeta,
     Player,
     Position,
+    Score,
     SkeletonWindow,
     Team,
     TrackingWindow,
@@ -32,6 +33,7 @@ from sim.schema import (
 )
 
 from .calibrate import PanoramaCamera
+from .events import detect_events
 from .pose import coco_to_schema, lift
 from .track import PitchTracker
 
@@ -69,6 +71,7 @@ def main() -> None:
     ap.add_argument("out")
     ap.add_argument("--match-id", default="real-clip")
     ap.add_argument("--min-coverage", type=float, default=0.3)
+    ap.add_argument("--ball", help="output of vision.ball (replaces the generic detector's ball)")
     a = ap.parse_args()
     d = np.load(a.extract)
     meta = json.loads(str(d["meta"]))
@@ -140,15 +143,20 @@ def main() -> None:
         cnf, _ = resample(fr, np.array(cf), n_out, fps)
         conf[:, p] = cnf * seen[:, None]
 
-    # ball: detector rarely sees a 4-8 px ball in the wide render; keep it below the grass when unknown
+    # ball: unknown frames stay below the grass (z=-5) rather than inventing a position
     ball = np.tile([cam.p["L"] / 2, cam.p["W"] / 2, -5.0], (n_out, 1))
-    bd = d["ball"]
-    if len(bd):
+    if a.ball:
+        bz = np.load(a.ball)
+        good = bz["conf"] > 0.5
+        if good.sum() >= 2:
+            b, seen = resample(np.round(bz["t"][good] * OUT_FPS), bz["xy"][good], n_out, OUT_FPS, max_gap_s=0.6)
+            ball[seen, :2] = b[seen]
+            ball[seen, 2] = 0.11
+    elif len(d["ball"]):
+        bd = d["ball"]  # generic detector: fires on boots, only a fallback
         good = bd[:, 5] > 0.4
         if good.sum() >= 2:
-            fr = bd[good, 0]
-            bxy = bd[good, 6:8]
-            b, seen = resample(fr, bxy, n_out, fps, max_gap_s=0.5)
+            b, seen = resample(bd[good, 0], bd[good, 6:8], n_out, fps, max_gap_s=0.5)
             ball[seen, :2] = b[seen]
             ball[seen, 2] = 0.11
 
@@ -165,9 +173,14 @@ def main() -> None:
     duration = n_out / OUT_FPS
     win = TrackingWindow(id=wid, source="video", t_start=0.0, fps=OUT_FPS, n_frames=n_out, player_ids=pids, ball=np.round(ball, 2).tolist(), players=np.round(pos, 2).tolist(), actions=[], event_ids=[])
     sk = SkeletonWindow(id=f"sk-{wid}", window_id=wid, source="video", t_start=0.0, fps=OUT_FPS, n_frames=n_out, joint_names=list(JOINT_NAMES), bones=list(BONES), player_ids=pids, frames=np.round(joints, 3).tolist(), confidence=np.round(conf, 2).tolist())
+    team_ids = {pid: teams[k].id for pid, k in zip(pids, team_of, strict=True)}
+    in_play = (joints[:, :, 0, 2] > -1) & (np.asarray(team_of) < 2)[None]  # officials never control the ball
     ev = [Event(id="ev00000", t=0.0, period=1, minute=0, second=0, type=EventType.HALF_START, team_id=teams[0].id)]
+    ev += detect_events(0.0, OUT_FPS, ball, pos, pids, team_ids, known=ball[:, 2] > -1, visible=in_play, control_m=2.0)
+    win.event_ids = [e.id for e in ev]
+    goals = [e.team_id for e in ev if e.type == EventType.GOAL]
     m = Match(
-        meta=MatchMeta(match_id=a.match_id, source="video", duration_s=duration, half_length_s=duration, home_team_id=teams[0].id, away_team_id=teams[1].id),
+        meta=MatchMeta(match_id=a.match_id, source="video", duration_s=duration, half_length_s=duration, home_team_id=teams[0].id, away_team_id=teams[1].id, final_score=Score(home=goals.count(teams[0].id), away=goals.count(teams[1].id))),
         teams=teams,
         events=ev,
         windows=[WindowRef(id=wid, t_start=0.0, t_end=duration, trigger_event_ids=[])],
@@ -181,7 +194,7 @@ def main() -> None:
     (out / "lowres.json").write_text(low.model_dump_json())
     (out / "windows" / f"{wid}.json").write_text(win.model_dump_json())
     (out / "skeletons" / f"{wid}.json").write_text(sk.model_dump_json())
-    print(f"wrote {out}: {P} tracks ({[len(t.players) for t in teams]} per group), {duration:.1f}s, ball frames {(ball[:, 2] > 0).sum()}")
+    print(f"wrote {out}: {P} tracks ({[len(t.players) for t in teams]} per group), {duration:.1f}s, ball frames {(ball[:, 2] > 0).sum()}, events {len(ev) - 1}")
 
 
 if __name__ == "__main__":
