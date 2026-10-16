@@ -45,9 +45,22 @@ def wrap(a: np.ndarray) -> np.ndarray:
     return (a + np.pi) % (2 * np.pi) - np.pi
 
 
+_last_frames: tuple[Any, np.ndarray | None] = (None, None)
+
+
+def _frames(sk: SkeletonWindow) -> np.ndarray:
+    """sk.frames as an array, converted once per window (a window has many kicks/receptions)."""
+    global _last_frames
+    c = _last_frames
+    if c[0] is not sk:
+        c = (sk, np.asarray(sk.frames, float))
+        _last_frames = c
+    return c[1]
+
+
 def strike_analysis(sk: SkeletonWindow, player_id: str, t: float, foot: str = "right") -> dict[str, Any]:
     """Key angles around a kick at time ``t``: backswing, contact, follow-through."""
-    arr = np.asarray(sk.frames, float)
+    arr = _frames(sk)
     p = sk.player_ids.index(player_id)
     fc = int(np.clip(round((t - sk.t_start) * sk.fps), 0, sk.n_frames - 1))
     k = "r" if foot != "left" else "l"
@@ -73,7 +86,7 @@ def strike_analysis(sk: SkeletonWindow, player_id: str, t: float, foot: str = "r
 
 def scanning(sk: SkeletonWindow, player_id: str, t_receive: float, lookback_s: float = 3.0, thresh_deg: float = 40) -> dict[str, Any]:
     """Count shoulder checks (head yaw away from body yaw > thresh) before receiving."""
-    arr = np.asarray(sk.frames, float)
+    arr = _frames(sk)
     p = sk.player_ids.index(player_id)
     f1 = int(np.clip(round((t_receive - sk.t_start) * sk.fps), 0, sk.n_frames - 1))
     f0 = max(0, f1 - int(lookback_s * sk.fps))
@@ -86,7 +99,7 @@ def scanning(sk: SkeletonWindow, player_id: str, t_receive: float, lookback_s: f
 
 def body_orientation(sk: SkeletonWindow, player_id: str, t: float, goal_xy: tuple[float, float]) -> float:
     """Degrees between body facing and direction to the attacked goal (0 = square to goal)."""
-    arr = np.asarray(sk.frames, float)
+    arr = _frames(sk)
     p = sk.player_ids.index(player_id)
     f = int(np.clip(round((t - sk.t_start) * sk.fps), 0, sk.n_frames - 1))
     yaw = float(facing_yaw(arr[f, p]))
