@@ -1,0 +1,219 @@
+import { Canvas } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, type KeyMoment, type MatchEvent, type MatchInfo, type Replay } from "./api";
+import Pitch from "./replay/Pitch";
+import ReplayScene, { EventOverlays, type CameraMode, type Clock, type Overlays } from "./replay/ReplayScene";
+
+type Mode = "fan" | "analyst";
+const fmtClock = (t: number) => `${Math.floor(t / 60)}'${String(Math.floor(t % 60)).padStart(2, "0")}`;
+const KIND_LABEL: Record<KeyMoment["kind"], string> = { goal: "Goal", big_chance: "Big chance", save: "Save", shot: "Shot" };
+
+const OVERLAY_LABELS: [keyof Overlays, string][] = [
+  ["passes", "Pass lines"], ["pressure", "Pressure"], ["defLine", "Def. line"], ["sprints", "Sprint trails"],
+  ["speeds", "Speeds"], ["angles", "Body angles"], ["tags", "Name tags"],
+];
+const DEFAULT_OVERLAYS: Record<Mode, Overlays> = {
+  analyst: { passes: true, pressure: true, defLine: true, sprints: true, speeds: true, angles: true, tags: true },
+  fan: { passes: true, pressure: false, defLine: false, sprints: true, speeds: false, angles: false, tags: true },
+};
+
+export default function App() {
+  const [matchId, setMatchId] = useState<string | null>(null);
+  const [info, setInfo] = useState<MatchInfo | null>(null);
+  const [events, setEvents] = useState<MatchEvent[]>([]);
+  const [moments, setMoments] = useState<KeyMoment[]>([]);
+  const [metrics, setMetrics] = useState<Record<string, any> | null>(null);
+  const [moment, setMoment] = useState<KeyMoment | null>(null);
+  const [replay, setReplay] = useState<Replay | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("analyst");
+  const [overlays, setOverlays] = useState<Overlays>(DEFAULT_OVERLAYS.analyst);
+  const [camera, setCamera] = useState<CameraMode>("director");
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const clock = useRef<Clock>({ frame: 0, playing: true, rate: 1, autoSlow: true }).current;
+  const [uiT, setUiT] = useState(0);
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    api.matches().then((ms) => setMatchId(ms[0]?.match_id ?? null)).catch((e) => setError(String(e)));
+  }, []);
+  useEffect(() => {
+    if (!matchId) return;
+    Promise.all([api.match(matchId), api.events(matchId), api.moments(matchId), api.metrics(matchId)])
+      .then(([i, ev, km, mt]) => {
+        setInfo(i); setEvents(ev); setMoments(km); setMetrics(mt);
+        const top = [...km].sort((a, b) => a.rank - b.rank)[0];
+        if (top) setMoment(top);
+      })
+      .catch((e) => setError(String(e)));
+  }, [matchId]);
+  useEffect(() => {
+    if (!matchId || !moment) return;
+    setLoading(true);
+    api.replay(matchId, moment.window_id).then((r) => {
+      setReplay(r); clock.frame = 0; clock.playing = true; setLoading(false);
+    }).catch((e) => setError(String(e)));
+  }, [matchId, moment, clock]);
+  // 10 Hz UI tick reads the scene clock
+  useEffect(() => {
+    const id = setInterval(() => replay && setUiT(replay.tracking.t_start + clock.frame / replay.tracking.fps), 100);
+    return () => clearInterval(id);
+  }, [replay, clock]);
+
+  const names = useMemo(() => Object.fromEntries((info?.teams ?? []).flatMap((t) => t.players.map((p) => [p.id, p.short_name]))), [info]);
+  const teamById = useMemo(() => Object.fromEntries((info?.teams ?? []).map((t) => [t.id, t])), [info]);
+  const home = info?.teams.find((t) => t.id === info.meta.home_team_id);
+  const away = info?.teams.find((t) => t.id === info.meta.away_team_id);
+  const score = useMemo(() => {
+    const s = { home: 0, away: 0 };
+    for (const e of events) if (e.type === "goal" && e.t <= uiT) e.team_id === home?.id ? s.home++ : s.away++;
+    return s;
+  }, [events, uiT, home]);
+  const ticker = useMemo(() => events.filter((e) => e.t <= uiT && e.t > uiT - 40 && !["possession_change", "carry"].includes(e.type)).slice(-7).reverse(), [events, uiT]);
+
+  if (error) return <div className="splash">Could not reach the API: {error}</div>;
+  if (!info || !replay || !home || !away) return <div className="splash">Loading match…</div>;
+
+  const dur = info.meta.duration_s;
+  const windowLen = replay.tracking.n_frames / replay.tracking.fps;
+  const setMode2 = (m: Mode) => { setMode(m); setOverlays(DEFAULT_OVERLAYS[m]); };
+  const shooter = moment ? teamById[moment.team_id] : null;
+
+  return (
+    <div className="app">
+      <header className="top">
+        <div className="scorebug">
+          <span className="chip" style={{ background: home.color_primary }} />
+          <span className="team">{home.short_name}</span>
+          <span className="score">{score.home} – {score.away}</span>
+          <span className="team">{away.short_name}</span>
+          <span className="chip" style={{ background: away.color_primary }} />
+          <span className="clock">{fmtClock(uiT)}</span>
+          <span className="replay-badge">REPLAY</span>
+        </div>
+        <div className="brand">Tactical Replay <small>synthetic league · {info.meta.match_id}</small></div>
+        <div className="controls-top">
+          <div className="seg">
+            {(["fan", "analyst"] as Mode[]).map((m) => (
+              <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode2(m)}>{m === "fan" ? "Fan" : "Analyst"}</button>
+            ))}
+          </div>
+          <select value={focusId ?? ""} onChange={(e) => setFocusId(e.target.value || null)} aria-label="Focus player">
+            <option value="">Focus player…</option>
+            {info.teams.map((t) => (
+              <optgroup key={t.id} label={t.name}>
+                {t.players.map((p) => <option key={p.id} value={p.id}>{p.number} {p.name}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+      </header>
+
+      <main className="stage">
+        <div className="viewport">
+          <Canvas shadows camera={{ position: [0, 25, 55], fov: 32, near: 0.1, far: 500 }} gl={{ antialias: true, preserveDrawingBuffer: true }} dpr={[1, 2]}>
+            <color attach="background" args={["#05070b"]} />
+            <Pitch />
+            <ReplayScene replay={replay} teams={info.teams} clock={clock} overlays={overlays} camera={camera} focusId={focusId} />
+            <EventOverlays replay={replay} uiT={uiT} overlays={overlays} names={names} />
+          </Canvas>
+          {loading && <div className="loading">Loading replay…</div>}
+          <div className="cams">
+            {(["director", "broadcast", "behind", "player", "orbit"] as CameraMode[]).map((c) => (
+              <button key={c} className={camera === c ? "on" : ""} onClick={() => setCamera(c)}>
+                {{ director: "Director", broadcast: "Broadcast", behind: "Behind ball", player: "Player cam", orbit: "Orbit" }[c]}
+              </button>
+            ))}
+          </div>
+          <div className="overlay-toggles">
+            {OVERLAY_LABELS.map(([k, label]) => (
+              <label key={k}><input type="checkbox" checked={overlays[k]} onChange={() => setOverlays({ ...overlays, [k]: !overlays[k] })} /> {label}</label>
+            ))}
+          </div>
+          {moment && (
+            <div className="lower-third" style={{ borderColor: shooter?.color_primary }}>
+              <div className="kind">{KIND_LABEL[moment.kind]} · {moment.minute}'</div>
+              <div className="title">{moment.title}</div>
+            </div>
+          )}
+          <div className="ticker">
+            {ticker.map((e) => (
+              <div key={e.id} className={`tick ${e.type}`}>
+                <span className="t">{fmtClock(e.t)}</span>
+                <span className="dot" style={{ background: e.team_id ? teamById[e.team_id]?.color_primary : "#888" }} />
+                {e.type.replace("_", " ")} {e.player_id ? names[e.player_id] : ""}
+                {mode === "analyst" && <span className="evid">{e.id}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <aside className="panel">
+          <h3>{moment?.title}</h3>
+          {moment && (
+            <div className="stats">
+              <div><b>{moment.xg.toFixed(2)}</b><span>xG</span></div>
+              <div><b>{moment.build_up_event_ids.length}</b><span>build-up actions</span></div>
+              <div><b>#{moment.rank}</b><span>importance</span></div>
+            </div>
+          )}
+          {mode === "analyst" ? (
+            <div className="passes">
+              <h4>Passes in this replay</h4>
+              {replay.annotations.passes.map((p) => (
+                <div key={p.event_id} className="pass-row">
+                  <span className="bar" style={{ width: `${p.difficulty * 100}%` }} />
+                  <span>{names[p.player_id]} → {p.receiver_id ? names[p.receiver_id] : "lost"}</span>
+                  <span>{p.length_m.toFixed(0)} m · {(p.difficulty * 100).toFixed(0)}</span>
+                  <span className="evid">{p.event_id}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="fan-blurb">
+              {moment?.kind === "goal" ? "What a moment!" : "So close!"} Chances like this go in about {Math.round((moment?.xg ?? 0) * 100)} times out of 100.
+            </p>
+          )}
+          {metrics && (
+            <div className="team-table">
+              <h4>Match stats</h4>
+              {(mode === "analyst" ? ["possession_pct", "xg", "shots", "pass_completion_pct", "ppda", "field_tilt_pct", "defensive_line_m"] : ["possession_pct", "shots", "xg"]).map((k) => (
+                <div key={k} className="row">
+                  <span>{metrics.teams[home.id][k]}</span>
+                  <span className="k">{k.replace(/_/g, " ").replace(" pct", " %")}</span>
+                  <span>{metrics.teams[away.id][k]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
+      </main>
+
+      <footer className="bottom">
+        <div className="transport">
+          <button onClick={() => { clock.playing = !clock.playing; force((n) => n + 1); }} aria-label="Play or pause">{clock.playing ? "❚❚" : "▶"}</button>
+          <button onClick={() => { clock.frame = 0; clock.playing = true; force((n) => n + 1); }} aria-label="Restart">↺</button>
+          <input type="range" min={0} max={replay.tracking.n_frames - 1} step={1} value={Math.round((uiT - replay.tracking.t_start) * replay.tracking.fps)}
+            onChange={(e) => { clock.frame = Number(e.target.value); setUiT(replay.tracking.t_start + clock.frame / replay.tracking.fps); }} aria-label="Scrub" />
+          <span className="tc">{(uiT - replay.tracking.t_start).toFixed(1)} / {windowLen.toFixed(1)} s</span>
+          <div className="seg">
+            {[0.1, 0.25, 0.5, 1, 2].map((r) => (
+              <button key={r} className={clock.rate === r ? "on" : ""} onClick={() => { clock.rate = r; force((n) => n + 1); }}>{r}×</button>
+            ))}
+          </div>
+          <label className="auto"><input type="checkbox" checked={clock.autoSlow} onChange={() => { clock.autoSlow = !clock.autoSlow; force((n) => n + 1); }} /> auto slow-mo</label>
+        </div>
+        <div className="timeline">
+          <div className="half" style={{ left: `${(info.meta.half_length_s / dur) * 100}%` }} />
+          {moments.map((m) => (
+            <button key={m.id} className={`mk ${m.kind} ${moment?.id === m.id ? "sel" : ""}`} style={{ left: `${(m.t / dur) * 100}%`, borderColor: teamById[m.team_id]?.color_primary }}
+              onClick={() => setMoment(m)} title={`${m.minute}' ${m.title} (xG ${m.xg})`}>
+              {m.kind === "goal" ? "G" : ""}
+            </button>
+          ))}
+        </div>
+      </footer>
+    </div>
+  );
+}
