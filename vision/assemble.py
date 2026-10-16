@@ -31,6 +31,7 @@ from sim.schema import (
     TrackingWindow,
     WindowRef,
 )
+from sim.skeleton import build_skeleton
 
 from .calibrate import PanoramaCamera
 from .events import detect_events
@@ -71,6 +72,7 @@ def main() -> None:
     ap.add_argument("out")
     ap.add_argument("--match-id", default="real-clip")
     ap.add_argument("--min-coverage", type=float, default=0.3)
+    ap.add_argument("--motion", choices=["lift", "mocap"], default="lift", help="skeletons: single-view pose lift, or CMU mocap driven by the video tracks and detected kicks")
     ap.add_argument("--ball", help="output of vision.ball (replaces the generic detector's ball)")
     a = ap.parse_args()
     d = np.load(a.extract)
@@ -178,6 +180,12 @@ def main() -> None:
     ev = [Event(id="ev00000", t=0.0, period=1, minute=0, second=0, type=EventType.HALF_START, team_id=teams[0].id)]
     ev += detect_events(0.0, OUT_FPS, ball, pos, pids, team_ids, known=ball[:, 2] > -1, visible=in_play, control_m=2.0)
     win.event_ids = [e.id for e in ev]
+    win.actions = [{"t": e.t, "player_id": e.player_id, "kind": "kick", "power": 1.0 if e.type == EventType.SHOT else min(e.attributes.get("length_m", 15) / 35, 1), "shot": e.type == EventType.SHOT, "event_id": e.id} for e in ev if e.type in (EventType.PASS, EventType.SHOT)]
+    if a.motion == "mocap":
+        # human motion from the mocap library, placed on the real tracks; unobserved players stay hidden
+        mj = np.asarray(build_skeleton(win).frames)
+        mj[joints[:, :, 0, 2] < -1, :, 2] = -5.0
+        sk = SkeletonWindow(id=f"sk-{wid}", window_id=wid, source="video-mocap", t_start=0.0, fps=OUT_FPS, n_frames=n_out, player_ids=pids, frames=np.round(mj, 3).tolist(), confidence=None)
     goals = [e.team_id for e in ev if e.type == EventType.GOAL]
     m = Match(
         meta=MatchMeta(match_id=a.match_id, source="video", duration_s=duration, half_length_s=duration, home_team_id=teams[0].id, away_team_id=teams[1].id, final_score=Score(home=goals.count(teams[0].id), away=goals.count(teams[1].id))),

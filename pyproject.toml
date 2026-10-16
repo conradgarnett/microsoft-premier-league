@@ -21,7 +21,7 @@ azure = [
   "azure-identity>=1.15",
   "azure-cosmos>=4.5",
 ]
-dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.4"]
+dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.4", "scipy>=1.11", "opencv-python-headless>=4.9"]  # vision tests (no torch)
 # video-to-schema pipeline (vision/): heavy, not needed by the app or tests
 vision = ["torch>=2.2", "transformers>=4.50", "opencv-python-headless>=4.9", "av>=12", "scipy>=1.11", "pillow>=10"]
 
@@ -45,4 +45,5 @@ ignore = ["E501", "B008", "UP042"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # vision/ is a script package, not installed
 filterwarnings = ["ignore::DeprecationWarning"]

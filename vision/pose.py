@@ -8,8 +8,6 @@ position, perpendicular to the camera ray, scaled by the player's pixel height.
 from __future__ import annotations
 
 import numpy as np
-import torch
-from transformers import AutoProcessor, VitPoseForPoseEstimation
 
 MODEL = "usyd-community/vitpose-base-simple"
 COCO = ["nose", "l_eye", "r_eye", "l_ear", "r_ear", "l_shoulder", "r_shoulder", "l_elbow", "r_elbow", "l_wrist", "r_wrist", "l_hip", "r_hip", "l_knee", "r_knee", "l_ankle", "r_ankle"]
@@ -18,13 +16,20 @@ C = {n: i for i, n in enumerate(COCO)}
 
 class PoseEstimator:
     def __init__(self, model: str = MODEL, device: str | None = None) -> None:
+        import torch  # heavy: only the extractor needs it; coco_to_schema/lift stay numpy-only
+        from transformers import AutoProcessor, VitPoseForPoseEstimation
+
+        self.torch = torch
         self.device = device or ("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
         self.proc = AutoProcessor.from_pretrained(model)
         self.model = VitPoseForPoseEstimation.from_pretrained(model).to(self.device).eval()
 
-    @torch.no_grad()
     def __call__(self, image: np.ndarray, boxes_xyxy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """-> keypoints (N,17,2) in image px and scores (N,17)."""
+        with self.torch.no_grad():
+            return self._run(image, boxes_xyxy)
+
+    def _run(self, image: np.ndarray, boxes_xyxy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if len(boxes_xyxy) == 0:
             return np.zeros((0, 17, 2)), np.zeros((0, 17))
         b = boxes_xyxy.astype(float).copy()

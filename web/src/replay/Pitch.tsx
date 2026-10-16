@@ -118,7 +118,9 @@ function boardTexture(): THREE.CanvasTexture {
   g.fillRect(0, 0, 1024, 32);
   g.font = "bold 22px Barlow Condensed, Arial Narrow, sans-serif";
   g.fillStyle = "#9fd2ff";
-  for (let x = 20; x < 1024; x += 256) g.fillText("TACTICAL REPLAY  ·  INSIDE THE GAME", x, 24);
+  const text = "TACTICAL REPLAY  ·  INSIDE THE GAME";
+  const step = g.measureText(text).width + 60; // fallback fonts are wider: space by measured width
+  for (let x = 20; x + step - 60 < 1024; x += step) g.fillText(text, x, 24);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
