@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import uuid
 from functools import lru_cache
 from typing import Any, Protocol
 
@@ -46,7 +47,7 @@ class LocalStore:
     def put_doc(self, match_id: str, name: str, doc: Any) -> None:
         p = self._path(match_id, name)
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
+        tmp = p.with_suffix(f".{uuid.uuid4().hex}.tmp")  # unique: concurrent writers must not share a temp file
         tmp.write_text(json.dumps(doc))
         tmp.replace(p)  # atomic: never leave a half-written document
 

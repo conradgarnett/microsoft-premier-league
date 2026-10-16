@@ -25,10 +25,11 @@ class Track:
 
 
 class PitchTracker:
-    def __init__(self, dt: float, gate_m: float = 2.5, max_misses: int = 25) -> None:
+    def __init__(self, dt: float, gate_m: float = 4.5, max_misses: int = 37, colour_w: float = 0.08) -> None:
         self.dt = dt
         self.gate = gate_m
         self.max_misses = max_misses
+        self.colour_w = colour_w  # metres of cost per unit of torso-colour difference
         self.tracks: list[Track] = []
         self.dead: list[Track] = []
         self._next = 0
@@ -38,9 +39,14 @@ class PitchTracker:
         pred = np.array([t.pos + t.vel * self.dt * (t.misses + 1) for t in self.tracks]).reshape(-1, 2)
         matched_d: set[int] = set()
         if len(pred) and len(dets):
-            cost = np.linalg.norm(pred[:, None] - dets[None], axis=2)
+            dist = np.linalg.norm(pred[:, None] - dets[None], axis=2)
             gate = self.gate + 0.4 * np.array([t.misses for t in self.tracks])[:, None]
-            cost = np.where(cost <= gate, cost, 1e6)
+            # far-side detections jitter by metres (one pixel ~0.5 m), so appearance breaks ties
+            w = np.array([0.5, 1.0, 1.0])  # Lab with half-weight lightness: separates white/black kits, tolerates shade
+            tc = np.array([np.mean(t.colors[-15:], axis=0) * w for t in self.tracks])
+            dc = np.array([m[2] * w for m in meta])
+            cost = dist + self.colour_w * np.linalg.norm(tc[:, None] - dc[None], axis=2)
+            cost = np.where(dist <= gate, cost, 1e6)
             rows, cols = linear_sum_assignment(cost)
             for r, c in zip(rows, cols, strict=True):
                 if cost[r, c] >= 1e6:

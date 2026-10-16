@@ -286,8 +286,9 @@ function TacticalOverlays({ replay, teams, clock, overlays }: Ctx) {
       const defTeam = teamOf.find((t) => t !== teamOf[c])!;
       const xs = pos.map((p, i) => (teamOf[i] === defTeam ? p[0] : NaN)).filter((x) => !Number.isNaN(x));
       // the defending keeper marks which goal they protect
-      const gk = [...gkIdx].find((i) => teamOf[i] === defTeam)!;
-      const goalRight = pos[gk][0] > 52.5;
+      const gk = [...gkIdx].find((i) => teamOf[i] === defTeam);
+      // no keeper known (video clips): defenders' mean position marks their goal side
+      const goalRight = gk !== undefined ? pos[gk][0] > 52.5 : xs.reduce((a, b) => a + b, 0) / xs.length > pos[c][0];
       const sorted = [...xs].sort((a, b) => (goalRight ? b - a : a - b));
       const lx = sorted[1];
       line.current.position.set(lx - 52.5, 0.04, 0);

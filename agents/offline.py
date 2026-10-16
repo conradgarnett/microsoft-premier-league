@@ -181,7 +181,8 @@ def recap(ctx: dict, lang: str, mode: str, focus: str | None) -> dict:
     away = next(t for t in teams if t != home)
     hs, as_ = sm["score"]["home"], sm["score"]["away"]
     ts = sm["team_stats"]
-    goal_ids = [g["event_id"] for g in sm["goals"]]
+    # goalless matches still need evidence: fall back to the biggest chances, then rhythm events
+    goal_ids = [g["event_id"] for g in sm["goals"]] or [k["shot_event_id"] for k in ctx["top_moments"]][:3] or ctx["rhythm_evidence"][:3]
     claims = []
     if hs == as_:
         claims.append(line("r_result_draw", goal_ids, lang, home=teams[home], away=teams[away], hs=hs, as_=as_))

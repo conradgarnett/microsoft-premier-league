@@ -68,7 +68,7 @@ def main() -> None:
     ap.add_argument("camera")
     ap.add_argument("out")
     ap.add_argument("--match-id", default="real-clip")
-    ap.add_argument("--min-coverage", type=float, default=0.5)
+    ap.add_argument("--min-coverage", type=float, default=0.3)
     a = ap.parse_args()
     d = np.load(a.extract)
     meta = json.loads(str(d["meta"]))
@@ -78,7 +78,7 @@ def main() -> None:
     n_out = int(round(meta["duration"] * OUT_FPS))
 
     # 1) de-duplicate the two halves' overlap (same person seen in both) then track on the pitch
-    tracker = PitchTracker(dt=1 / fps, gate_m=2.0, max_misses=int(fps))
+    tracker = PitchTracker(dt=1 / fps, max_misses=int(3 * fps))
     for f in range(n_src):
         idx = np.where(d["frame"] == f)[0]
         keep = []
@@ -92,8 +92,9 @@ def main() -> None:
 
     # 2) teams from torso colour (outliers = referees / keepers -> 'other')
     cols = np.array([np.median(np.array(t.colors), 0) for t in tracks])
-    lab, centers = kmeans2(cols[:, 1:])  # chroma only (a*, b*) is robust to shadows
-    dist = np.linalg.norm(cols[:, 1:] - centers[lab], axis=1)
+    feat = cols * [0.5, 1.0, 1.0]  # half-weight lightness: white vs black kits differ mostly in L
+    lab, centers = kmeans2(feat)
+    dist = np.linalg.norm(feat - centers[lab], axis=1)
     other = dist > max(12.0, 2.5 * np.median(dist))
     team_of = np.where(other, 2, lab)
 
@@ -106,7 +107,7 @@ def main() -> None:
         if c is not None:
             import cv2
 
-            rgb = cv2.cvtColor(np.uint8([[[150, c[0], c[1]]]]), cv2.COLOR_LAB2RGB)[0, 0]  # OpenCV 8-bit Lab
+            rgb = cv2.cvtColor(np.uint8([[[min(c[0] * 2, 255), c[1], c[2]]]]), cv2.COLOR_LAB2RGB)[0, 0]  # OpenCV 8-bit Lab
             colours[k] = "#" + "".join(f"{int(v):02x}" for v in rgb)
         teams.append(Team(id=f"real-{shorts[k].lower()}", name=names[k], short_name=shorts[k], color_primary=colours[k], color_secondary="#202020", formation="unknown", players=[]))
     pids = []
@@ -135,6 +136,7 @@ def main() -> None:
             sk.append(lift(jp[0], g, cam_xy))
             cf.append(jc[0])
         joints[:, p], _ = resample(fr, np.array(sk), n_out, fps)
+        joints[~seen, p, :, 2] = -5.0  # not observed: park the figure under the grass instead of inventing motion
         cnf, _ = resample(fr, np.array(cf), n_out, fps)
         conf[:, p] = cnf * seen[:, None]
 

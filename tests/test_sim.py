@@ -67,3 +67,18 @@ def test_schema_roundtrip(bundle):
     assert m2.meta.match_id == bundle.match.meta.match_id
     assert m2.attack_direction(m2.meta.home_team_id, 1) == 1
     assert m2.attack_direction(m2.meta.home_team_id, 2) == -1
+
+
+def test_movement_calibrated_to_real_footage():
+    """Aggregate targets measured on real high-school footage (vision/stats.py):
+    median speed ~1.95 m/s, p99 ~7.45 m/s, ~1.4% of time above 7 m/s, team width ~26 m."""
+    from vision.stats import movement_stats, shape_stats
+
+    sim = MatchSimulator(seed=5, duration_min=20)
+    sim.run()
+    st = movement_stats(sim.hist_pos[::5].astype(float), 5)
+    assert 1.5 < st["speed_p50_mps"] < 2.8
+    assert 6.0 < st["speed_p99_mps"] < 9.0
+    assert 0.003 < st["share_sprint_gt7"] < 0.05
+    sh = shape_stats(sim.hist_pos[::25].astype(float), {0: list(range(1, 11)), 1: list(range(12, 22))})
+    assert 20 < sh["team_width_p10_p90_m"] < 34

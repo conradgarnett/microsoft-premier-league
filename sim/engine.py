@@ -240,7 +240,7 @@ class MatchSimulator:
             self.poss_passes = 0
             self.pressure_logged = set()
 
-    def give_ball(self, i: int, delay: tuple[float, float] = (0.4, 1.3)) -> None:
+    def give_ball(self, i: int, delay: tuple[float, float] = (0.8, 2.2)) -> None:
         self.state = "held"
         self.holder = i
         self.flight = None
@@ -292,7 +292,7 @@ class MatchSimulator:
             base = self.base[s]
             shift = (bt[0] - 52.5) * 0.55 + (7.0 if in_poss else -5.0)
             tx = base[:, 0] + shift
-            width = 1.05 if in_poss else 0.72
+            width = 0.75 if in_poss else 0.55  # calibrated: real team width (p10-p90) ~26 m
             ty = 34 + (base[:, 1] - 34) * width + (bt[1] - 34) * 0.32
             # offside-ish line: attackers do not go beyond the second-last defender
             opp = self.team_slice(1 - team)
@@ -316,7 +316,8 @@ class MatchSimulator:
             t2[:, 1] = np.clip(t2[:, 1], 1.0, W - 1.0)
             for k in range(11):
                 self.targets[s.start + k] = self.to_world(t2[k], team)
-        self.intensity[:] = 0.42
+        # far from their slot players sprint back (recovery runs), near it they walk/jog (arrival term in move())
+        self.intensity[:] = np.clip(0.3 + 0.045 * np.linalg.norm(self.targets - self.pos, axis=1), 0.3, 0.92)
         # marking pull for the defending team: drift towards nearest attacker, goal side
         if self.state in ("held", "flight"):
             dteam = 1 - self.team_in_poss
@@ -411,7 +412,7 @@ class MatchSimulator:
     def move(self) -> None:
         delta = self.targets - self.pos
         dist = np.linalg.norm(delta, axis=1) + 1e-9
-        speed = np.minimum(self.max_speed * self.intensity, dist * 1.4)
+        speed = np.minimum(self.max_speed * self.intensity, dist * 0.55)  # calibrated: ~50% of time below 2 m/s
         desired = delta / dist[:, None] * speed[:, None]
         dv = desired - self.vel
         dvn = np.linalg.norm(dv, axis=1) + 1e-9
@@ -463,7 +464,7 @@ class MatchSimulator:
         if pt[0] > 72 and abs(pt[1] - 34) < 22 and self.pos_role[h] != Position.GK:
             q = shot_quality(pt[0], pt[1])
             dist_g = math.hypot(L - pt[0], 34 - pt[1])
-            u = -0.9 + 6.0 * q + (1.1 if dist_g < 25 else 0) + (self.shooting[h] - 70) / 40 - (0.5 if pressure < 1.5 else 0)
+            u = -1.15 + 6.0 * q + (1.1 if dist_g < 25 else 0) + (self.shooting[h] - 70) / 40 - (0.5 if pressure < 1.5 else 0)
             options.append((u, "shot", None))
 
         # passes
@@ -900,7 +901,7 @@ class MatchSimulator:
                 self.start_half(2)
             if step % 5 == 0:
                 if step % 125 == 0:
-                    self.jitter = 0.7 * self.jitter + 0.3 * self.rng.normal(0, 2.0, size=(22, 2))
+                    self.jitter = 0.7 * self.jitter + 0.3 * self.rng.normal(0, 1.2, size=(22, 2))
                 self.compute_targets()
             self.apply_dynamic_roles()
             if self.state == "held":
