@@ -210,6 +210,12 @@ DATA_DIR=cache/matches AUTOGENERATE=0 uvicorn api.main:app --port 8010
    and ball. The same code runs on synthetic windows, where the engine's events are ground
    truth: pass precision 0.93 / recall 0.82, 26 of 30 shots found (seed 7).
 
+Measured on one 60 s real clip (CPU only, ~8 s per frame at 12.5 fps): ~24 person detections
+per frame, 30 tracks with at least 30% coverage, players placed in 81% of frame slots; ball
+error against hand labels median 0.6 m (3 of 4 clear labels within 1 m; the follow-cam prior
+alone is 7.9 m off); 21 passes and 10 possession changes detected (not yet checked against
+the video). Small samples: treat these as a smoke test, not a benchmark.
+
 Ultralytics/YOLO was avoided because it is AGPL-3.0; everything here is Apache-2.0/MIT/BSD.
 Real footage, frames, outputs and calibration files stay outside this repository
 (a git-ignored local cache); only aggregate, anonymous numbers are reported here.
