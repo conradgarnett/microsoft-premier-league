@@ -11,3 +11,8 @@ web/dist/
 *.sqlite
 .DS_Store
 .azure/
+# real footage (private, never commit): see docs/vision.md for expected layout
+data/real/
+.cache/video/
+*.mp4
+*.det
