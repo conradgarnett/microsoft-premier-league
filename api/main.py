@@ -126,7 +126,7 @@ def replay(match_id: str, window_id: str) -> dict[str, Any]:
     sk = _get(repo.skeleton, match_id, window_id)
     return {
         "tracking": win.model_dump(),
-        "skeleton": {"t_start": sk.t_start, "fps": sk.fps, "n_frames": sk.n_frames, "joint_names": sk.joint_names, "bones": sk.bones, "player_ids": sk.player_ids, "frames": sk.frames},
+        "skeleton": {"source": sk.source, "t_start": sk.t_start, "fps": sk.fps, "n_frames": sk.n_frames, "joint_names": sk.joint_names, "bones": sk.bones, "player_ids": sk.player_ids, "frames": sk.frames},
         "annotations": annotate_window(m, win, sk),
     }
 

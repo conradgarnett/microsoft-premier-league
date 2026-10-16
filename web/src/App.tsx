@@ -151,7 +151,7 @@ export default function App() {
           <span className="clock">{fmtClock(clockT)}</span>
           <span className={view === "live" ? "live-badge" : "replay-badge"}>{view === "live" ? "LIVE" : "REPLAY"}</span>
         </div>
-        <div className="brand">Tactical Replay <small>synthetic league · {info.meta.match_id}</small></div>
+        <div className="brand">Tactical Replay <small>{info.meta.source === "video" ? `real footage · tracked from video · motion ${replay.skeleton.source === "video-mocap" ? "mocap on real tracks" : "single-view pose lift"}` : "synthetic league"} · {info.meta.match_id}</small></div>
         <div className="controls-top">
           <div className="seg">
             <button className={view === "live" ? "on" : ""} onClick={() => setView("live")}>Live</button>

@@ -39,7 +39,7 @@ export interface StrikeAnn {
 export interface ScanAnn { player_id: string; t: number; scans: number; body_to_goal_deg?: number; open_body?: boolean }
 export interface Replay {
   tracking: { id: string; t_start: number; fps: number; n_frames: number; player_ids: string[]; ball: Vec3[]; players: Vec2[][] };
-  skeleton: { t_start: number; fps: number; n_frames: number; joint_names: string[]; bones: [string, string][]; player_ids: string[]; frames: Vec3[][][] };
+  skeleton: { source?: string; t_start: number; fps: number; n_frames: number; joint_names: string[]; bones: [string, string][]; player_ids: string[]; frames: Vec3[][][] };
   annotations: {
     passes: PassAnn[];
     shots: { event_id: string; t: number; player_id: string; xg: number; outcome: string; start: Vec2; end: Vec3; speed_mps: number }[];
