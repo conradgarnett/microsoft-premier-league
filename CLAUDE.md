@@ -37,29 +37,28 @@ Legal: fictional clubs and players only. No EA/FIFA/FC24/HyperMotion names, no r
 - 2026-10-16: More tests: analytics (xG geometry, report consistency, pass difficulty, physical), store (path traversal, Cosmos size routing with a fake container), calibration projection round-trip. CosmosStore keeps its not-found exception on the instance.
 - 2026-10-16 (cloud session 2): Verified the scorebug (1-1 after the 55' IRV goal; counts goal events up to the replay clock, so it was the pre-goal frame). Fixed the web typecheck (nullable metrics), headless Chrome as root (`--no-sandbox`), ad-board text overlap, and CI (`vision` not importable: pytest `pythonpath`, scipy/OpenCV in dev extras, lazy torch import in `vision/pose.py`). Vision: `vision/fetch.py` (segment cache by stream copy), `vision/events.py` (control runs -> pass / possession change / shot / goal; on synthetic ground truth pass P 0.93 R 0.82, shots 26/30), streamed `vision/ball.py` with a full-resolution crop detector around the follow-cam prior, `assemble --ball/--motion lift|mocap` (mocap = CMU motion on real tracks, skeleton source `video-mocap`), `vision.pose.rigidify` (Taylor depth recovery, rigid bones; synthetic one-camera test 12.5 -> 5.7 cm mean joint error). Agents: workflow reaches the recap when a match has no key moments; recap describes real clips by what was tracked. Viewer header names the data source for video clips.
 
-## HANDOFF (2026-10-16, moved off the laptop mid-session)
+## HANDOFF (2026-10-16, end of cloud session 2)
 
-### Done (all on `overnight-build`, draft PR #1)
-- Synthetic engine (`sim/`), schema + JSON schemas, CMU-mocap skeletons, movement calibrated to aggregate real-footage stats.
-- Analytics, FastAPI (REST + WebSocket live), local/Cosmos storage, MCP server, 5-agent Agent Framework workflow with offline fallback.
-- Viewer: 3D replay (cameras, slow-mo, overlays, angle callouts), live mode, insight panel (moment / recap / agents trace), rhythm chart, fan/analyst, 4 languages, focus player.
-- Docker/compose, CI, azd + Bicep (validated with `bicep build`), README.
-- Tests: `pytest -q` (sim, skeleton validation, analytics, agents + fallback, API + WebSocket, MCP, store, calibration). Last full run green.
+### Done (all on `overnight-build`, draft PR #1, CI green)
+- Synthetic engine, schema, CMU-mocap skeletons, analytics, FastAPI (REST + WebSocket live), local/Cosmos storage, MCP server, Docker/compose, CI, azd + Bicep, README, `docs/demo.md` (2-minute shot list).
+- Six-agent Agent Framework workflow: Director -> Analyst + Commentator per moment -> Recap Writer + Data Auditor (parallel) -> Translator; evidence validation, retry, offline fallback. Works for matches without key moments (video clips).
+- Viewer: 3D replay, live mode, insight panel (moment / recap + data provenance / agents), rhythm chart, fan/analyst, en/es/fr/pt for agent text AND viewer chrome, focus player, video-source header.
+- Vision: fetch -> extract -> ball (crop detector + motion + follow-cam prior) -> assemble (`--ball`, `--motion lift|mocap`, events, final score) -> evaluate. Event heuristics scored on synthetic GT; pose depth recovery tested on synthetic mocap.
+- Tests: `pytest -q` 36 passed (also passes without torch, as in CI).
 
-### In progress (vision/) - exact next steps
-1. `vision/ball.py` `main()` was just written and NOT yet run end to end. Run:
-   `python -m vision.ball <video> <camera.json> <followcam.json> <directions.det> <extract.npz> <out.npz>`
-   then wire the output into `vision/assemble.py` (add a `--ball out.npz` option replacing the detector-based ball; mark z=0.11 where `conf>0.5`, keep the prior with low confidence otherwise).
-2. Event heuristics from tracks + ball: possession = nearest player within 1.5 m; pass = possession moves between same-team players; possession_change across teams; shot = fast ball towards a goal mouth. Emit `Event`s with ids so analytics/agents work on video clips.
-3. A second, 60 s clip extraction was killed at ~60%; rerun `python -m vision.extract ... <start> 60 <out.npz>` (about 1.5 s per frame at 12.5 fps on an M2; much faster on a GPU box).
-4. Mine "real high-school motion" clips from pose tracks (private repo only), compare with the CMU library.
-- Inputs live outside this repo: calibration landmarks, fitted camera and follow-cam mapping, notes -> private companion repo (`vision/`, `notes/`); videos/frames -> local cache only. Expected local layout: `data/real/` or `../mpl-cache/` (both outside git). Replay a real clip: `DATA_DIR=<assembled dir> AUTOGENERATE=0 uvicorn api.main:app --port 8010`.
-- Model choices: RT-DETR (`PekingU/rtdetr_r50vd_coco_o365`) + ViTPose (`usyd-community/vitpose-base-simple`), both Apache-2.0. Ultralytics avoided (AGPL). Generic "sports ball" detection fires on white boots; ball comes from motion candidates + follow-cam prior (RANSAC fit: bearing ~= 0.74*yaw, ~81/566 inliers).
+### Real-footage run (local cache `/home/user/mpl-cache/m0`, never committed)
+- 60 s panorama clip of manifest[0] at t=2400 s; `post.sh` there chains ball -> evaluate -> assemble (lift + mocap) -> stats. Results go to the private repo `notes/`.
+- CPU only here: extraction ~10 s/frame at 12.5 fps (RT-DETR + ViTPose on 4 cores). Use a GPU box for longer clips.
+- Hand ball labels: private repo `vision/ball_labels_m0_2400.json` (7 frames, 5 usable ground labels). Follow-cam prior error 3-16 m even where the ball is visible.
 
-### Known bugs / caveats
-- Scorebug reported as showing 0-2 at the 72' KBY goal (expected 1-2). The scorebug counts `goal` events with `t <= current time`, so it flips only ~0.2 s after the shot; verify whether the report was the pre-goal frame or a real bug (old seed-7 data was regenerated since).
-- Headless Chrome (SwiftShader) renders the viewer at ~1 fps, so replay clocks barely advance in screenshots; real GPUs are fine.
-- Synthetic striker pass counts and distances are still high-ish (~13-14 km/90); pass totals ~1,550 per match.
-- `/insights` for video-derived matches (no shots) is untested; the viewer falls back to raw windows.
-- Real-provider (Azure OpenAI) path constructs correctly but was never called (no credentials here).
-- Slide tackle and keeper dive roll are procedural (no CMU equivalent).
+### Next steps
+1. Read the run results, replay `real-m0-lift` / `real-m0-mocap` locally (`DATA_DIR=/home/user/mpl-cache/m0/matches AUTOGENERATE=0 uvicorn api.main:app --port 8010`), fix what looks wrong.
+2. More ball labels (label around the ball output to measure precision, around the prior for recall).
+3. Recalibrate synthetic movement if the new clip's aggregate stats differ from the first clip's (`python -m vision.stats`).
+4. Record the demo on a GPU machine; try the Azure OpenAI provider once credentials exist.
+
+### Known caveats
+- Headless Chrome (SwiftShader) renders at ~1 fps; screenshots need `CHROME=/opt/pw-browsers/chromium-1194/chrome-linux/chrome` in the cloud container.
+- Synthetic pass totals ~1,550 per match (high); distance ~140 m/min matches the (jitter-inflated) real measurement it was calibrated to.
+- Azure OpenAI path constructed but never called. Slide tackle and keeper dive roll are procedural.
+- Cached insights in `data/matches/*/insights/` predate the Data Auditor; delete them to regenerate.
