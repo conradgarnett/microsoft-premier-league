@@ -105,3 +105,43 @@ def select(prior: np.ndarray, cands: list[np.ndarray], gate_m: float = 9.0, fps:
     pad = np.pad(xy, ((k // 2, k // 2), (0, 0)), mode="edge")
     xy = np.stack([np.median(pad[i : i + k], axis=0) for i in range(F)])
     return xy, conf
+
+
+def main() -> None:
+    """python -m vision.ball <video> <camera.json> <followcam.json> <directions.det> <extract.npz> <out.npz>"""
+    import argparse
+    import json
+
+    from .video import iter_frames
+
+    ap = argparse.ArgumentParser()
+    for name in ("video", "camera", "followcam", "directions", "extract", "out"):
+        ap.add_argument(name)
+    ap.add_argument("--src-fps", type=float, default=29.97, help="frame rate the directions file is sampled at")
+    a = ap.parse_args()
+    cam = PanoramaCamera(json.load(open(a.camera))["params"])
+    fc = json.load(open(a.followcam))
+    dirs = np.loadtxt(a.directions, delimiter=",")
+    ex = np.load(a.extract)
+    meta = json.loads(str(ex["meta"]))
+    fps = 25.0
+    grays, ts = [], []
+    for t, img in iter_frames(a.video, meta["start"], meta["duration"], fps):
+        grays.append(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY))
+        ts.append(t)
+    G = np.stack(grays)
+    cands = []
+    for f in range(len(G)):
+        lo, hi = max(0, f - 50), min(len(G), f + 50)  # +-2 s rolling background
+        bg = np.median(G[lo:hi:10], axis=0)
+        pf = int(round(f * meta["fps"] / fps))
+        boxes = ex["box"][ex["frame"] == pf]
+        cands.append(candidates(G[f], bg, boxes, cam))
+    prior = prior_xy(fc, cam, dirs[np.clip(np.round(np.array(ts) * a.src_fps).astype(int), 0, len(dirs) - 1)])
+    xy, conf = select(prior, cands)
+    np.savez_compressed(a.out, t=np.array(ts) - meta["start"], xy=xy, conf=conf, prior=prior, n_cands=np.array([len(c) for c in cands]))
+    print(f"ball: {len(ts)} frames, {np.mean(conf > 0.5):.0%} with a matched candidate, median candidates/frame {np.median([len(c) for c in cands]):.0f}")
+
+
+if __name__ == "__main__":
+    main()

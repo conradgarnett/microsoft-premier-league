@@ -35,3 +35,30 @@ Legal: fictional clubs and players only. No EA/FIFA/FC24/HyperMotion names, no r
 - 2026-10-16: Live mode in the viewer (`web/src/replay/LiveScene.tsx`): WebSocket feed at 5/20/60x, interpolated 2 fps positions, live scorebug/ticker/timeline, toast for goals and big chances that jumps into the 3D replay. Name tags are now constant-size (hidden within 6 m of the camera). `scripts/screenshot.mjs` takes a post-JS wait argument.
 - 2026-10-16: Orchestration now runs as an Agent Framework workflow graph (`agents/workflow.py`: DirectorExecutor -> MomentExecutor (fan-out per key moment) -> RecapExecutor (fan-in) -> TranslatorExecutor -> yield_output); `Orchestrator.call` keeps validation/retry/fallback. Recap tab gained a game-rhythm chart (xG per 5 min + chaos index, `web/src/RhythmChart.tsx`).
 - 2026-10-16: More tests: analytics (xG geometry, report consistency, pass difficulty, physical), store (path traversal, Cosmos size routing with a fake container), calibration projection round-trip. CosmosStore keeps its not-found exception on the instance.
+
+## HANDOFF (2026-10-16, moved off the laptop mid-session)
+
+### Done (all on `overnight-build`, draft PR #1)
+- Synthetic engine (`sim/`), schema + JSON schemas, CMU-mocap skeletons, movement calibrated to aggregate real-footage stats.
+- Analytics, FastAPI (REST + WebSocket live), local/Cosmos storage, MCP server, 5-agent Agent Framework workflow with offline fallback.
+- Viewer: 3D replay (cameras, slow-mo, overlays, angle callouts), live mode, insight panel (moment / recap / agents trace), rhythm chart, fan/analyst, 4 languages, focus player.
+- Docker/compose, CI, azd + Bicep (validated with `bicep build`), README.
+- Tests: `pytest -q` (sim, skeleton validation, analytics, agents + fallback, API + WebSocket, MCP, store, calibration). Last full run green.
+
+### In progress (vision/) - exact next steps
+1. `vision/ball.py` `main()` was just written and NOT yet run end to end. Run:
+   `python -m vision.ball <video> <camera.json> <followcam.json> <directions.det> <extract.npz> <out.npz>`
+   then wire the output into `vision/assemble.py` (add a `--ball out.npz` option replacing the detector-based ball; mark z=0.11 where `conf>0.5`, keep the prior with low confidence otherwise).
+2. Event heuristics from tracks + ball: possession = nearest player within 1.5 m; pass = possession moves between same-team players; possession_change across teams; shot = fast ball towards a goal mouth. Emit `Event`s with ids so analytics/agents work on video clips.
+3. A second, 60 s clip extraction was killed at ~60%; rerun `python -m vision.extract ... <start> 60 <out.npz>` (about 1.5 s per frame at 12.5 fps on an M2; much faster on a GPU box).
+4. Mine "real high-school motion" clips from pose tracks (private repo only), compare with the CMU library.
+- Inputs live outside this repo: calibration landmarks, fitted camera and follow-cam mapping, notes -> private companion repo (`vision/`, `notes/`); videos/frames -> local cache only. Expected local layout: `data/real/` or `../mpl-cache/` (both outside git). Replay a real clip: `DATA_DIR=<assembled dir> AUTOGENERATE=0 uvicorn api.main:app --port 8010`.
+- Model choices: RT-DETR (`PekingU/rtdetr_r50vd_coco_o365`) + ViTPose (`usyd-community/vitpose-base-simple`), both Apache-2.0. Ultralytics avoided (AGPL). Generic "sports ball" detection fires on white boots; ball comes from motion candidates + follow-cam prior (RANSAC fit: bearing ~= 0.74*yaw, ~81/566 inliers).
+
+### Known bugs / caveats
+- Scorebug reported as showing 0-2 at the 72' KBY goal (expected 1-2). The scorebug counts `goal` events with `t <= current time`, so it flips only ~0.2 s after the shot; verify whether the report was the pre-goal frame or a real bug (old seed-7 data was regenerated since).
+- Headless Chrome (SwiftShader) renders the viewer at ~1 fps, so replay clocks barely advance in screenshots; real GPUs are fine.
+- Synthetic striker pass counts and distances are still high-ish (~13-14 km/90); pass totals ~1,550 per match.
+- `/insights` for video-derived matches (no shots) is untested; the viewer falls back to raw windows.
+- Real-provider (Azure OpenAI) path constructs correctly but was never called (no credentials here).
+- Slide tackle and keeper dive roll are procedural (no CMU equivalent).
