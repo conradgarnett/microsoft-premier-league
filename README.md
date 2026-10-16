@@ -214,7 +214,9 @@ Measured on one 60 s real clip (CPU only, ~8 s per frame at 12.5 fps): ~24 perso
 per frame, 30 tracks with at least 30% coverage, players placed in 81% of frame slots; ball
 error against hand labels median 0.5 m (all 4 clear labels within 1 m; the follow-cam prior
 alone is 7.9 m off; ball measured in 58% of frames, interpolated or prior elsewhere); 17 passes
-and 6 possession changes detected (not yet checked against the video). Small samples: treat these as a smoke test, not a benchmark.
+and 6 possession changes detected, but a visual spot check of 6 of them found an on-ball
+action near the detected spot in only 2 (3 had no ball nearby): event detection on real video
+is limited by the ball track and is not yet reliable. Small samples: treat these as a smoke test, not a benchmark.
 
 Ultralytics/YOLO was avoided because it is AGPL-3.0; everything here is Apache-2.0/MIT/BSD.
 Real footage, frames, outputs and calibration files stay outside this repository

@@ -53,7 +53,7 @@ Legal: fictional clubs and players only. No EA/FIFA/FC24/HyperMotion names, no r
 - Hand ball labels: private repo `vision/ball_labels_m0_2400.json` (7 frames, 5 usable ground labels). Follow-cam prior error 3-16 m even where the ball is visible.
 
 ### Next steps
-1. Real clip assembled and replayable (`DATA_DIR=/home/user/mpl-cache/m0/matches AUTOGENERATE=0 uvicorn api.main:app --port 8010`; the cache is lost with the container, re-run `vision.fetch` + `post.sh`-style chain). Verify detected passes against the video; team split (18/10/2) is fragment-inflated.
+1. Real clip assembled and replayable (`DATA_DIR=/home/user/mpl-cache/m0/matches AUTOGENERATE=0 uvicorn api.main:app --port 8010`; the cache is lost with the container, re-run `vision.fetch` + `post.sh`-style chain). Detected passes on video were spot-checked: 2 of 6 match an on-ball action (3 false). Improve the ball track first (detector at a higher rate on a GPU, use only measured frames for events); team split (18/10/2) is fragment-inflated.
 2. More ball labels (label around the ball output to measure precision, around the prior for recall).
 3. Recalibrate synthetic movement if the new clip's aggregate stats differ from the first clip's (`python -m vision.stats`).
 4. Record the demo on a GPU machine; try the Azure OpenAI provider once credentials exist.
