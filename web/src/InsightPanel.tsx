@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Claim, Insights, KeyMoment, MatchEvent, Replay } from "./api";
+import type { Claim, Insights, KeyMoment, MatchEvent, Replay, Team } from "./api";
+import RhythmChart from "./RhythmChart";
 
 type Tab = "moment" | "recap" | "agents";
 const UI: Record<string, Record<string, string>> = {
@@ -29,7 +30,7 @@ const PIPELINE = ["Replay Director", "Tactical Analyst", "Commentator", "Recap W
 
 export default function InsightPanel(props: {
   insights: Insights | null; moment: KeyMoment | null; mode: "fan" | "analyst"; lang: string; replay: Replay;
-  names: Record<string, string>; metrics: Record<string, any> | null; homeId: string; awayId: string; events: MatchEvent[];
+  names: Record<string, string>; metrics: Record<string, any> | null; homeId: string; awayId: string; events: MatchEvent[]; teams: Team[];
   onSeek: (t: number) => void;
 }) {
   const { insights, moment, mode, lang, replay, names, metrics, homeId, awayId } = props;
@@ -92,6 +93,14 @@ export default function InsightPanel(props: {
               <ul className="claims">
                 {insights.recap.claims.map((c, i) => <ClaimRow key={i} c={c} analyst={analyst} onSeek={seek} />)}
               </ul>
+            </>
+          )}
+          {metrics?.rhythm?.length > 0 && (
+            <>
+              <h4>Game rhythm</h4>
+              <RhythmChart bins={metrics.rhythm} homeId={homeId} awayId={awayId}
+                homeColor={props.teams.find((t) => t.id === homeId)?.color_primary ?? "#fff"}
+                awayColor={props.teams.find((t) => t.id === awayId)?.color_primary ?? "#888"} />
             </>
           )}
           {metrics && (

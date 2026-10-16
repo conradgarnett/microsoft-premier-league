@@ -131,58 +131,12 @@ class Orchestrator:
         raise RuntimeError(f"{role}/{task} failed after fallback: {error}")
 
     async def run(self, match_id: str, mode: str = "analyst", lang: str = "en", focus: str | None = None) -> dict[str, Any]:
-        t = self.tools
-        state = MatchState(match_id, mode, lang, focus, t.valid_event_ids(match_id))
-        report = t.report(match_id)
-        moments = report["key_moments"]
-        names = {p.id: p.short_name for p in t.repo.match(match_id).players()}
+        """Run the agent graph (an Agent Framework workflow) and return insights + trace."""
+        from .workflow import InsightsRequest, build_workflow
 
-        # 1. Replay Director picks the reel
-        state.outputs["director"] = await self.call(state, "director", "director", {"moments": moments, "reel_size": 6})
-
-        # 2. Analyst + Commentator per moment, in parallel (handoff from the director)
-        async def per_moment(km: dict) -> tuple[str, dict]:
-            ctx = t.get_moment_context(match_id, km["id"])
-            analysis, commentary = await asyncio.gather(
-                self.call(state, "analyst", "analysis", ctx, sender="Replay Director"),
-                self.call(state, "commentator", "commentary", ctx, sender="Replay Director"),
-            )
-            return km["id"], {"analysis": analysis, "commentary": commentary}
-
-        results = await asyncio.gather(*(per_moment(km) for km in moments))
-        state.outputs["moments"] = dict(results)
-
-        # 3. Recap Writer reads the analysts' findings from shared state
-        summary = t.get_match_summary(match_id)
-        rctx: dict[str, Any] = {
-            "summary": summary,
-            "names": names,
-            "goal_moments": [k for k in moments if k["kind"] == "goal"],
-            "top_moments": sorted(moments, key=lambda k: k["rank"])[:5],
-            "analyst_headlines": {mid: r["analysis"]["headline"] for mid, r in state.outputs["moments"].items()},
-            "rhythm": report["rhythm"],
-            "rhythm_evidence": [e for b in report["rhythm"] for e in b["evidence"]],
-            "pressure_evidence": [e["id"] for e in t.get_events(match_id, types=["pressure"], limit=5)],
-        }
-        if focus:
-            rctx["focus_stats"] = t.get_player_stats(match_id, focus)
-            rctx["focus_evidence"] = [e["id"] for e in t.get_events(match_id, limit=200) if e.get("player_id") == focus][:5]
-        state.outputs["recap"] = await self.call(state, "recap", "recap", rctx, sender="Tactical Analyst")
-
-        # 4. Translator renders everything in the requested language
-        if lang != "en":
-            payload = {"moments": state.outputs["moments"], "recap": state.outputs["recap"]}
-            translated = await self.call(state, "translator", "translate", {"payload": payload}, lang=lang, sender="Recap Writer")
-            state.outputs["moments"], state.outputs["recap"] = translated["moments"], translated["recap"]
-
-        return {
-            "match_id": match_id,
-            "mode": mode,
-            "lang": lang,
-            "focus": focus,
-            "provider": self.provider,
-            "director": state.outputs["director"],
-            "moments": state.outputs["moments"],
-            "recap": state.outputs["recap"],
-            "trace": state.trace,
-        }
+        state = MatchState(match_id, mode, lang, focus, self.tools.valid_event_ids(match_id))
+        result = await build_workflow(self).run(InsightsRequest(state))
+        outputs = result.get_outputs()
+        if not outputs:
+            raise RuntimeError("workflow produced no output")
+        return outputs[0]

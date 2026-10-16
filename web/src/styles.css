@@ -115,3 +115,7 @@ select { background: #121722; border: 1px solid var(--line); border-radius: 6px;
 .toast b { font-family: var(--display); font-size: 26px; }
 .toast em { font-style: normal; color: var(--cool); }
 .timeline .progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(225,29,72,0.25); border-right: 2px solid #e11d48; }
+.rhythm { margin: 0; }
+.rhythm svg { width: 100%; height: auto; background: rgba(255,255,255,0.03); border-radius: 6px; }
+.rhythm figcaption { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.rhythm figcaption i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }

@@ -233,7 +233,7 @@ export default function App() {
         </div>
 
         <InsightPanel insights={insights} moment={moment} mode={mode} lang={lang} replay={replay} names={names} metrics={metrics}
-          homeId={home.id} awayId={away.id} events={events} onSeek={seek} />
+          homeId={home.id} awayId={away.id} events={events} onSeek={seek} teams={info.teams} />
       </main>
 
       <footer className="bottom">

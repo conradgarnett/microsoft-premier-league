@@ -58,6 +58,11 @@ flowchart LR
 
 ### Agents and handoffs
 
+The pipeline is a Microsoft Agent Framework **workflow graph** (`agents/workflow.py`,
+`WorkflowBuilder` + `Executor`s): `replay_director` fans out one message per key moment to
+`moment_analysis`, which fans in to `recap_writer`, which hands off to `translator`, which
+yields the workflow output. Agents share one `MatchState` blackboard.
+
 1. **Replay Director** reads the ranked key moments and picks the reel: which moments, which
    camera at which time (broadcast -> behind the ball -> player cam on the shooter), and
    where to slow down. The viewer's *Director* camera follows this script.
@@ -120,7 +125,7 @@ connect to the same server.
 
 | Technology | Where |
 |---|---|
-| **Microsoft Agent Framework** | `agents/`: every agent is an `agent_framework.Agent`; the offline provider is a custom `BaseChatClient`; MCP tools via `MCPStdioTool`. |
+| **Microsoft Agent Framework** | `agents/`: the pipeline is a `WorkflowBuilder` graph of `Executor`s (fan-out per moment, fan-in to the recap); every agent is an `agent_framework.Agent`; the offline provider is a custom `BaseChatClient`; MCP tools via `MCPStdioTool`. |
 | **Microsoft Foundry / Azure OpenAI** | `agents/providers.py`: `OpenAIChatCompletionClient` against an Azure OpenAI (Foundry) deployment, key or Entra ID auth. `infra/` deploys the model. |
 | **MCP** | `mcp_server/`: official `mcp` SDK server, stdio + Streamable HTTP. |
 | **Azure Cosmos DB** | `api/store.py` `CosmosStore` (`STORE=cosmos`), serverless account + RBAC in `infra/main.bicep`. |
