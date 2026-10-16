@@ -108,3 +108,10 @@ select { background: #121722; border: 1px solid var(--line); border-radius: 6px;
 .trace { padding-left: 18px; font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
 .trace li { display: flex; flex-direction: column; }
 .trace li.rejected { color: var(--hot); }
+.live-badge { background: #e11d48; color: #fff; font-size: 13px; padding: 2px 6px; border-radius: 3px; font-weight: 800; letter-spacing: 1.5px; animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { opacity: 0.55; } }
+.toast { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; background: rgba(10,14,22,0.95); border: 2px solid var(--accent); border-radius: 10px; padding: 10px 22px; animation: slide 0.3s ease-out; }
+.toast span { font-family: var(--display); color: var(--accent); letter-spacing: 2px; text-transform: uppercase; font-size: 13px; }
+.toast b { font-family: var(--display); font-size: 26px; }
+.toast em { font-style: normal; color: var(--cool); }
+.timeline .progress { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(225,29,72,0.25); border-right: 2px solid #e11d48; }

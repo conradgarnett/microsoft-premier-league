@@ -126,7 +126,7 @@ function Players({ replay, teams, clock, overlays, focusId }: Ctx) {
       if (g) g.position.set(J[0].x, J[0].y + 0.45, J[0].z);
       // close-up cameras: hide tags that would fill the screen
       const div = tagDivs.current[p];
-      if (div) div.style.visibility = camera.position.distanceTo(J[0]) < 12 ? "hidden" : "visible";
+      if (div) div.style.visibility = camera.position.distanceTo(J[0]) < 6 ? "hidden" : "visible";
     }
     boneMesh.current.instanceMatrix.needsUpdate = true;
     headMesh.current.instanceMatrix.needsUpdate = true;
@@ -172,7 +172,7 @@ function Players({ replay, teams, clock, overlays, focusId }: Ctx) {
       {overlays.tags &&
         playerInfo.map(({ p, t }, i) => (
           <group key={p.id} ref={(el) => (tagRefs.current[i] = el)}>
-            <Html center distanceFactor={28} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+            <Html center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
               <div ref={(el) => (tagDivs.current[i] = el)} className={`tag ${p.id === focusId ? "focus" : ""}`} style={{ borderColor: t.color_primary }}>
                 <b>{p.number}</b> {p.short_name.split(" ").slice(-1)[0]}
                 <span ref={(el) => (speedRefs.current[i] = el)} className="spd" />

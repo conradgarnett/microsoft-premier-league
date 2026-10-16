@@ -1,11 +1,11 @@
 // Headless Chrome screenshot over the DevTools protocol (Node 22+, no packages).
-// Usage: node scripts/screenshot.mjs <url> <out.png> [waitSeconds] [jsToRunBeforeShot]
+// Usage: node scripts/screenshot.mjs <url> <out.png> [waitSeconds] [jsToRunBeforeShot] [secondsAfterJs]
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const [url, out, wait = "12", js = ""] = process.argv.slice(2);
+const [url, out, wait = "12", js = "", post = "2.5"] = process.argv.slice(2);
 const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const port = 9333;
 const proc = spawn(chrome, [
@@ -34,7 +34,7 @@ await send("Page.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false });
 await send("Page.navigate", { url });
 await sleep(Number(wait) * 1000);
-if (js) { await send("Runtime.evaluate", { expression: js }); await sleep(2500); }
+if (js) { await send("Runtime.evaluate", { expression: js }); await sleep(Number(post) * 1000); }
 const shot = await send("Page.captureScreenshot", { format: "png" });
 writeFileSync(out, Buffer.from(shot.data, "base64"));
 console.log("saved", out);

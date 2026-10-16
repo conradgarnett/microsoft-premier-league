@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, getInsights, type Insights, type KeyMoment, type MatchEvent, type MatchInfo, type Replay } from "./api";
 import InsightPanel from "./InsightPanel";
 import Pitch from "./replay/Pitch";
+import LiveScene, { type LiveFeed } from "./replay/LiveScene";
 import ReplayScene, { EventOverlays, type CameraMode, type Clock, type Overlays } from "./replay/ReplayScene";
 
 type Mode = "fan" | "analyst";
@@ -34,6 +35,14 @@ export default function App() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [lang, setLang] = useState("en");
   const [insights, setInsights] = useState<Insights | null>(null);
+  const [view, setView] = useState<"replay" | "live">("replay");
+  const feed = useRef<LiveFeed>({ prev: null, next: null }).current;
+  const [liveEvents, setLiveEvents] = useState<MatchEvent[]>([]);
+  const [liveT, setLiveT] = useState(0);
+  const liveTRef = useRef(0);
+  const [liveSpeed, setLiveSpeed] = useState(20);
+  const [toast, setToast] = useState<KeyMoment | null>(null);
+  const [liveSession, setLiveSession] = useState(0);
   const clock = useRef<Clock>({ frame: 0, playing: true, rate: 1, autoSlow: true }).current;
   const [uiT, setUiT] = useState(0);
   const [, force] = useState(0);
@@ -65,6 +74,37 @@ export default function App() {
     setInsights(null);
     getInsights(matchId, mode, lang, focusId).then(setInsights).catch(() => setInsights(null));
   }, [matchId, mode, lang, focusId]);
+  // live mode: simulated real-time feed over WebSocket (events + 2 fps positions)
+  useEffect(() => {
+    if (view !== "live" || !matchId) return;
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/api/matches/${matchId}/live?speed=${liveSpeed}&start_t=${liveTRef.current}`);
+    const pending: MatchEvent[] = [];
+    ws.onmessage = (msg) => {
+      const m = JSON.parse(msg.data);
+      if (m.type === "frame") {
+        feed.prev = feed.next;
+        feed.next = { t: m.t, ball: m.ball, players: m.players, at: performance.now() };
+        liveTRef.current = m.t;
+      } else if (m.type === "event") {
+        pending.push(m.event);
+        if (m.event.type === "shot") {
+          const km = moments.find((k) => k.shot_event_id === m.event.id);
+          if (km && (km.kind === "goal" || km.kind === "big_chance" || km.rank <= 8)) setToast(km);
+        }
+      }
+    };
+    const id = setInterval(() => {
+      setLiveT(liveTRef.current);
+      if (pending.length) setLiveEvents((ev) => [...ev, ...pending.splice(0)]);
+    }, 250);
+    return () => { clearInterval(id); ws.close(); };
+  }, [view, matchId, liveSpeed, moments, feed, liveSession]);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 12000);
+    return () => clearTimeout(id);
+  }, [toast]);
   // 10 Hz UI tick reads the scene clock
   useEffect(() => {
     const id = setInterval(() => replay && setUiT(replay.tracking.t_start + clock.frame / replay.tracking.fps), 100);
@@ -75,12 +115,14 @@ export default function App() {
   const teamById = useMemo(() => Object.fromEntries((info?.teams ?? []).map((t) => [t.id, t])), [info]);
   const home = info?.teams.find((t) => t.id === info.meta.home_team_id);
   const away = info?.teams.find((t) => t.id === info.meta.away_team_id);
+  const clockT = view === "live" ? liveT : uiT;
+  const evSource = view === "live" ? liveEvents : events;
   const score = useMemo(() => {
     const s = { home: 0, away: 0 };
-    for (const e of events) if (e.type === "goal" && e.t <= uiT) e.team_id === home?.id ? s.home++ : s.away++;
+    for (const e of evSource) if (e.type === "goal" && e.t <= clockT) e.team_id === home?.id ? s.home++ : s.away++;
     return s;
-  }, [events, uiT, home]);
-  const ticker = useMemo(() => events.filter((e) => e.t <= uiT && e.t > uiT - 40 && !["possession_change", "carry"].includes(e.type)).slice(-7).reverse(), [events, uiT]);
+  }, [evSource, clockT, home]);
+  const ticker = useMemo(() => evSource.filter((e) => e.t <= clockT && e.t > clockT - (view === "live" ? 90 : 40) && !["possession_change", "carry"].includes(e.type)).slice(-7).reverse(), [evSource, clockT, view]);
 
   if (error) return <div className="splash">Could not reach the API: {error}</div>;
   if (!info || !replay || !home || !away) return <div className="splash">Loading match…</div>;
@@ -106,11 +148,15 @@ export default function App() {
           <span className="score">{score.home} – {score.away}</span>
           <span className="team">{away.short_name}</span>
           <span className="chip" style={{ background: away.color_primary }} />
-          <span className="clock">{fmtClock(uiT)}</span>
-          <span className="replay-badge">REPLAY</span>
+          <span className="clock">{fmtClock(clockT)}</span>
+          <span className={view === "live" ? "live-badge" : "replay-badge"}>{view === "live" ? "LIVE" : "REPLAY"}</span>
         </div>
         <div className="brand">Tactical Replay <small>synthetic league · {info.meta.match_id}</small></div>
         <div className="controls-top">
+          <div className="seg">
+            <button className={view === "live" ? "on" : ""} onClick={() => setView("live")}>Live</button>
+            <button className={view === "replay" ? "on" : ""} onClick={() => setView("replay")}>3D Replay</button>
+          </div>
           <div className="seg">
             {(["fan", "analyst"] as Mode[]).map((m) => (
               <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode2(m)}>{m === "fan" ? "Fan" : "Analyst"}</button>
@@ -138,29 +184,42 @@ export default function App() {
           <Canvas shadows camera={{ position: [0, 25, 55], fov: 32, near: 0.1, far: 500 }} gl={{ antialias: true, preserveDrawingBuffer: true }} dpr={[1, 2]}>
             <color attach="background" args={["#05070b"]} />
             <Pitch />
-            <ReplayScene replay={replay} teams={info.teams} clock={clock} overlays={overlays} camera={camera} focusId={focusId} script={reel} />
-            <EventOverlays replay={replay} uiT={uiT} overlays={overlays} names={names} />
+            {view === "live" ? (
+              <LiveScene feed={feed} teams={info.teams} playerIds={replay.tracking.player_ids} />
+            ) : (
+              <>
+                <ReplayScene replay={replay} teams={info.teams} clock={clock} overlays={overlays} camera={camera} focusId={focusId} script={reel} />
+                <EventOverlays replay={replay} uiT={uiT} overlays={overlays} names={names} />
+              </>
+            )}
           </Canvas>
-          {loading && <div className="loading">Loading replay…</div>}
-          <div className="cams">
+          {loading && view === "replay" && <div className="loading">Loading replay…</div>}
+          {view === "live" && toast && (
+            <button className="toast" onClick={() => { setMoment(toast); setView("replay"); setToast(null); }}>
+              <span>{KIND_LABEL[toast.kind]} · {toast.minute}'</span>
+              <b>{toast.title}</b>
+              <em>Watch the 3D replay ▸</em>
+            </button>
+          )}
+          {view === "replay" && <div className="cams">
             {(["director", "broadcast", "behind", "player", "orbit"] as CameraMode[]).map((c) => (
               <button key={c} className={camera === c ? "on" : ""} onClick={() => setCamera(c)}>
                 {{ director: "Director", broadcast: "Broadcast", behind: "Behind ball", player: "Player cam", orbit: "Orbit" }[c]}
               </button>
             ))}
-          </div>
-          <div className="overlay-toggles">
+          </div>}
+          {view === "replay" && <div className="overlay-toggles">
             {OVERLAY_LABELS.map(([k, label]) => (
               <label key={k}><input type="checkbox" checked={overlays[k]} onChange={() => setOverlays({ ...overlays, [k]: !overlays[k] })} /> {label}</label>
             ))}
-          </div>
-          {moment && (
+          </div>}
+          {view === "replay" && moment && (
             <div className="lower-third" style={{ borderColor: shooter?.color_primary }}>
               <div className="kind">{KIND_LABEL[moment.kind]} · {moment.minute}'</div>
               <div className="title">{moment.title}</div>
             </div>
           )}
-          {caption && <div className="caption">{caption.text}</div>}
+          {view === "replay" && caption && <div className="caption">{caption.text}</div>}
           <div className="ticker">
             {ticker.map((e) => (
               <div key={e.id} className={`tick ${e.type}`}>
@@ -178,6 +237,18 @@ export default function App() {
       </main>
 
       <footer className="bottom">
+        {view === "live" ? (
+          <div className="transport">
+            <span className="tc">Feed speed</span>
+            <div className="seg">
+              {[5, 20, 60].map((sp) => (
+                <button key={sp} className={liveSpeed === sp ? "on" : ""} onClick={() => setLiveSpeed(sp)}>{sp}×</button>
+              ))}
+            </div>
+            <button onClick={() => { liveTRef.current = 0; setLiveEvents([]); setLiveT(0); setLiveSession((n) => n + 1); }}>Restart match</button>
+            <span className="tc">{evSource.length} events received</span>
+          </div>
+        ) : (
         <div className="transport">
           <button onClick={() => { clock.playing = !clock.playing; force((n) => n + 1); }} aria-label="Play or pause">{clock.playing ? "❚❚" : "▶"}</button>
           <button onClick={() => { clock.frame = 0; clock.playing = true; force((n) => n + 1); }} aria-label="Restart">↺</button>
@@ -191,11 +262,13 @@ export default function App() {
           </div>
           <label className="auto"><input type="checkbox" checked={clock.autoSlow} onChange={() => { clock.autoSlow = !clock.autoSlow; force((n) => n + 1); }} /> auto slow-mo</label>
         </div>
+        )}
         <div className="timeline">
           <div className="half" style={{ left: `${(info.meta.half_length_s / dur) * 100}%` }} />
-          {moments.map((m) => (
+          {view === "live" && <div className="progress" style={{ width: `${(liveT / dur) * 100}%` }} />}
+          {moments.filter((m) => view === "replay" || m.t <= liveT).map((m) => (
             <button key={m.id} className={`mk ${m.kind} ${moment?.id === m.id ? "sel" : ""}`} style={{ left: `${(m.t / dur) * 100}%`, borderColor: teamById[m.team_id]?.color_primary }}
-              onClick={() => setMoment(m)} title={`${m.minute}' ${m.title} (xG ${m.xg})`}>
+              onClick={() => { setMoment(m); setView("replay"); }} title={`${m.minute}' ${m.title} (xG ${m.xg})`}>
               {m.kind === "goal" ? "G" : ""}
             </button>
           ))}
