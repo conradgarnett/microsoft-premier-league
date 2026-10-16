@@ -116,7 +116,8 @@ def select(prior: np.ndarray, cands: list[np.ndarray], dets: list[np.ndarray] | 
     """Per frame pick a ball position; returns (xy (F,2), confidence (F,)).
 
     Detector hits (``dets``, sparse frames) win: highest score, penalised by distance to the
-    reference (last pick if recent, else the follow-cam prior), confidence 0.9. Otherwise the
+    follow-cam prior, confidence 0.9. Motion candidates are gated around the reference (last
+    pick if recent, else the prior). Otherwise the
     motion candidate nearest the reference within ``gate_m`` (0.8). Else the prior (0.2).
     """
     F = len(prior)
@@ -128,7 +129,7 @@ def select(prior: np.ndarray, cands: list[np.ndarray], dets: list[np.ndarray] | 
         ref = 0.3 * prior[f] + 0.7 * last[1] if recent else prior[f]
         dc = dets[f] if dets is not None else np.zeros((0, 5))
         if len(dc):
-            d = np.linalg.norm(dc[:, 3:5] - ref, axis=1)
+            d = np.linalg.norm(dc[:, 3:5] - prior[f], axis=1)  # anchored to the prior: continuity can lock onto a spare ball
             ok = d < det_gate_m
             if ok.any():
                 k = int(np.argmax(np.where(ok, dc[:, 2] - d / 40, -np.inf)))
@@ -168,7 +169,7 @@ def main() -> None:
     cam = PanoramaCamera(json.load(open(a.camera))["params"])
     fc = json.load(open(a.followcam))
     dirs = np.loadtxt(a.directions, delimiter=",")
-    ex = np.load(a.extract)
+    ex = dict(np.load(a.extract))  # NpzFile re-reads an array on every access
     meta = json.loads(str(ex["meta"]))
     fps = 25.0
     # stream with a +-2 s ring buffer (a full 25 fps clip at 2048x2048 would need gigabytes)

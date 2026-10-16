@@ -75,7 +75,7 @@ def main() -> None:
     ap.add_argument("--motion", choices=["lift", "mocap"], default="lift", help="skeletons: single-view pose lift, or CMU mocap driven by the video tracks and detected kicks")
     ap.add_argument("--ball", help="output of vision.ball (replaces the generic detector's ball)")
     a = ap.parse_args()
-    d = np.load(a.extract)
+    d = dict(np.load(a.extract))  # NpzFile re-reads an array on every access
     meta = json.loads(str(d["meta"]))
     cam = PanoramaCamera(json.load(open(a.camera))["params"])
     fps = meta["fps"]
@@ -112,7 +112,9 @@ def main() -> None:
         if c is not None:
             import cv2
 
-            rgb = cv2.cvtColor(np.uint8([[[min(c[0] * 2, 255), c[1], c[2]]]]), cv2.COLOR_LAB2RGB)[0, 0]  # OpenCV 8-bit Lab
+            # display colour: keep the kit's hue, stretch lightness apart (shade turns white kits grey)
+            light = 235 if c[0] >= centers[1 - k][0] else 45
+            rgb = cv2.cvtColor(np.uint8([[[light, c[1], c[2]]]]), cv2.COLOR_LAB2RGB)[0, 0]  # OpenCV 8-bit Lab
             colours[k] = "#" + "".join(f"{int(v):02x}" for v in rgb)
         teams.append(Team(id=f"real-{shorts[k].lower()}", name=names[k], short_name=shorts[k], color_primary=colours[k], color_secondary="#202020", formation="unknown", players=[]))
     pids = []

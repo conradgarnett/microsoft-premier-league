@@ -214,7 +214,7 @@ export default function App() {
           </div>}
           {view === "replay" && moment && (
             <div className="lower-third" style={{ borderColor: shooter?.color_primary }}>
-              <div className="kind">{tr(lang, moment.kind)} · {moment.minute}'</div>
+              <div className="kind">{moment.id.startsWith("win-") ? tr(lang, "replay") : tr(lang, moment.kind)} · {moment.minute}'</div>
               <div className="title">{moment.player_id && names[moment.player_id] ? `${tr(lang, moment.kind)} – ${names[moment.player_id]} (${shooter?.short_name ?? ""})` : moment.title}</div>
             </div>
           )}
