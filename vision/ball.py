@@ -91,7 +91,8 @@ def detector_candidates(det, img: np.ndarray, cam: PanoramaCamera, prior: np.nda
     """-> (N, 5) [u, v, score, pitch_x, pitch_y] "sports ball" detections in a native-resolution crop.
 
     Downscaled whole halves shrink the ball to 2-4 px and the detector misses it; a 1024x512
-    crop at full resolution around the follow-cam prior keeps it at 5-8 px. Spare balls by
+    crop at full resolution around the follow-cam prior keeps it at 5-8 px, and its centre is
+    searched again at 2x. Spare balls by
     the benches are dropped by requiring a position on the pitch.
     """
     out = []
@@ -100,14 +101,16 @@ def detector_candidates(det, img: np.ndarray, cam: PanoramaCamera, prior: np.nda
         uv = cam.to_pixels(half, np.array([[prior[0], prior[1], 0.0]]))[0]
         if not (np.isfinite(uv).all() and 0 <= uv[0] < img.shape[1] and r0 <= uv[1] < r1):
             continue
-        x0 = int(np.clip(uv[0] - 512, 0, img.shape[1] - 1024))
-        y0 = int(np.clip(uv[1] - 256, r0, r1 - 512))
-        res = det([img[y0 : y0 + 512, x0 : x0 + 1024]], size=(512, 1024), threshold=threshold)[0]
-        for b, sc in zip(res["boxes"][res["labels"] == det.ball], res["scores"][res["labels"] == det.ball], strict=True):
-            u, v = (b[0] + b[2]) / 2 + x0, b[3] + y0
-            g = cam.to_pitch(half, np.array([[u, v]]))[0]
-            if np.isfinite(g).all() and -1 < g[0] < cam.p["L"] + 1 and -1 < g[1] < cam.p["W"] + 1:
-                out.append((u, v, sc, g[0], g[1]))
+        # a wide native crop, plus the centre at 2x (far-side balls are only ~4 px)
+        for w, h in ((1024, 512), (512, 256)):
+            x0 = int(np.clip(uv[0] - w // 2, 0, img.shape[1] - w))
+            y0 = int(np.clip(uv[1] - h // 2, r0, r1 - h))
+            res = det([img[y0 : y0 + h, x0 : x0 + w]], size=(512, 1024), threshold=threshold)[0]
+            for b, sc in zip(res["boxes"][res["labels"] == det.ball], res["scores"][res["labels"] == det.ball], strict=True):
+                u, v = (b[0] + b[2]) / 2 + x0, b[3] + y0
+                g = cam.to_pitch(half, np.array([[u, v]]))[0]
+                if np.isfinite(g).all() and -1 < g[0] < cam.p["L"] + 1 and -1 < g[1] < cam.p["W"] + 1:
+                    out.append((u, v, sc, g[0], g[1]))
         break
     return np.array(out, float).reshape(-1, 5)
 
