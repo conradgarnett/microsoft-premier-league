@@ -128,7 +128,7 @@ export default function InsightPanel(props: {
               return (
                 <div key={a} className={`stage-node ${calls.length ? "" : "idle"}`}>
                   <b>{a}</b>
-                  <span>{calls.filter((t) => t.status === "ok").length} ok{rejected ? ` · ${rejected} retried` : ""}</span>
+                  <span>{calls.length ? `${calls.filter((t) => t.status === "ok").length} ok${rejected ? ` · ${rejected} retried` : ""}` : "not needed"}</span>
                   {i < PIPELINE.length - 1 && <i className="arrow">↓</i>}
                 </div>
               );

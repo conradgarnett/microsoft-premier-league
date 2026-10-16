@@ -106,19 +106,21 @@ function Players({ replay, teams, clock, overlays, focusId }: Ctx) {
     let k = 0;
     for (let p = 0; p < P; p++) {
       const J = joints[p];
+      // a body brushing the lens fills the frame: drop it (never the followed player)
+      const vis = sk.player_ids[p] !== focusId && camera.position.distanceTo(J[8]) < 2.5 ? 0 : 1;
       for (const [a, b, r] of bones) {
         d.subVectors(J[b], J[a]);
         const len = d.length();
         mid.addVectors(J[a], J[b]).multiplyScalar(0.5);
         q.setFromUnitVectors(up, d.normalize());
-        s.set(r, len, r);
+        s.set(r * vis, len * vis, r * vis);
         m.compose(mid, q, s);
         boneMesh.current.setMatrixAt(k++, m);
       }
-      m.compose(J[0], q.identity(), s.set(0.13, 0.15, 0.13));
+      m.compose(J[0], q.identity(), s.set(0.13 * vis, 0.15 * vis, 0.13 * vis));
       headMesh.current.setMatrixAt(p, m);
       for (let j = 0; j < nJ; j++) {
-        const rr = j === 0 ? 0.001 : j === 8 ? 0.15 : j < 8 ? 0.06 : 0.07;
+        const rr = (j === 0 ? 0.001 : j === 8 ? 0.15 : j < 8 ? 0.06 : 0.07) * vis;
         m.compose(J[j], q.identity(), s.set(rr, rr, rr));
         jointMesh.current.setMatrixAt(p * nJ + j, m);
       }
