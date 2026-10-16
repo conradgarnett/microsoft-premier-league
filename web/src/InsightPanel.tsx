@@ -95,7 +95,7 @@ export default function InsightPanel(props: {
               </ul>
             </>
           )}
-          {metrics?.rhythm?.length > 0 && (
+          {metrics && metrics.rhythm?.length > 0 && (
             <>
               <h4>Game rhythm</h4>
               <RhythmChart bins={metrics.rhythm} homeId={homeId} awayId={awayId}

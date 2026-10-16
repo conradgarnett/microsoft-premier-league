@@ -11,6 +11,7 @@ const port = 9333;
 const proc = spawn(chrome, [
   "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "shot-"))}`,
   "--window-size=1600,900", "--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--hide-scrollbars",
+  ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []), // containers run as root
 ], { stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let target;
