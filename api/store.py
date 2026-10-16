@@ -64,7 +64,10 @@ class CosmosStore:
 
     def __init__(self, endpoint: str, database: str, container: str, blob_fallback: LocalStore) -> None:
         from azure.cosmos import CosmosClient, PartitionKey
+        from azure.cosmos.exceptions import CosmosResourceNotFoundError
         from azure.identity import DefaultAzureCredential
+
+        self.not_found = CosmosResourceNotFoundError
 
         key = os.getenv("COSMOS_KEY")
         client = CosmosClient(endpoint, credential=key or DefaultAzureCredential())
@@ -81,11 +84,9 @@ class CosmosStore:
         return sorted(self.c.query_items(q, enable_cross_partition_query=True))
 
     def get_doc(self, match_id: str, name: str) -> Any | None:
-        from azure.cosmos.exceptions import CosmosResourceNotFoundError
-
         try:
             item = self.c.read_item(self._id(match_id, name), partition_key=match_id)
-        except CosmosResourceNotFoundError:
+        except self.not_found:
             return None
         return self.blobs.get_doc(match_id, name) if item.get("blob") else item["doc"]
 
