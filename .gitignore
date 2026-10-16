@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/
+!docs/data/
+node_modules/
+web/dist/
+.env
+*.sqlite
+.DS_Store
+.azure/

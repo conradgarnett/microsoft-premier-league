@@ -1,0 +1,196 @@
+{
+  "$defs": {
+    "EventType": {
+      "enum": [
+        "kickoff",
+        "pass",
+        "carry",
+        "shot",
+        "goal",
+        "save",
+        "tackle",
+        "interception",
+        "pressure",
+        "foul",
+        "free_kick",
+        "goal_kick",
+        "clearance",
+        "ball_recovery",
+        "possession_change",
+        "half_start",
+        "half_end"
+      ],
+      "title": "EventType",
+      "type": "string"
+    }
+  },
+  "description": "One discrete on-ball (or game-state) event.",
+  "properties": {
+    "id": {
+      "description": "Stable id, e.g. ev00042. Agents cite these as evidence.",
+      "title": "Id",
+      "type": "string"
+    },
+    "t": {
+      "description": "Seconds since match kick-off",
+      "title": "T",
+      "type": "number"
+    },
+    "period": {
+      "title": "Period",
+      "type": "integer"
+    },
+    "minute": {
+      "title": "Minute",
+      "type": "integer"
+    },
+    "second": {
+      "title": "Second",
+      "type": "integer"
+    },
+    "type": {
+      "$ref": "#/$defs/EventType"
+    },
+    "team_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Team Id"
+    },
+    "player_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Player Id"
+    },
+    "x": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "X"
+    },
+    "y": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Y"
+    },
+    "end_x": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End X"
+    },
+    "end_y": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Y"
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "complete/incomplete, won/lost, goal/saved/off_target/blocked ...",
+      "title": "Outcome"
+    },
+    "receiver_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Receiver Id"
+    },
+    "opponent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Opponent Id"
+    },
+    "possession_id": {
+      "default": 0,
+      "title": "Possession Id",
+      "type": "integer"
+    },
+    "under_pressure": {
+      "default": false,
+      "title": "Under Pressure",
+      "type": "boolean"
+    },
+    "related_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Related Ids",
+      "type": "array"
+    },
+    "attributes": {
+      "additionalProperties": true,
+      "title": "Attributes",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "t",
+    "period",
+    "minute",
+    "second",
+    "type"
+  ],
+  "title": "Event",
+  "type": "object"
+}

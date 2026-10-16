@@ -1,0 +1,83 @@
+{
+  "description": "Columnar positional tracking for a time window.\n\n``players[f][p]`` is ``[x, y]`` for frame ``f`` and the ``p``-th id in ``player_ids``.\n``ball[f]`` is ``[x, y, z]``.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "source": {
+      "default": "synthetic",
+      "title": "Source",
+      "type": "string"
+    },
+    "t_start": {
+      "title": "T Start",
+      "type": "number"
+    },
+    "fps": {
+      "title": "Fps",
+      "type": "number"
+    },
+    "n_frames": {
+      "title": "N Frames",
+      "type": "integer"
+    },
+    "player_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Player Ids",
+      "type": "array"
+    },
+    "ball": {
+      "items": {
+        "items": {
+          "type": "number"
+        },
+        "type": "array"
+      },
+      "title": "Ball",
+      "type": "array"
+    },
+    "players": {
+      "items": {
+        "items": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "type": "array"
+      },
+      "title": "Players",
+      "type": "array"
+    },
+    "actions": {
+      "description": "Body actions in the window: {t, player_id, kind: kick|tackle|dive|receive, ...}",
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "event_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "t_start",
+    "fps",
+    "n_frames",
+    "player_ids",
+    "ball",
+    "players"
+  ],
+  "title": "TrackingWindow",
+  "type": "object"
+}
