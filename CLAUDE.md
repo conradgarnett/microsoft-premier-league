@@ -46,6 +46,7 @@ Legal: fictional clubs and players only. No EA/FIFA/FC24/HyperMotion names, no r
 - Viewer: 3D replay, live mode, insight panel (moment / recap + data provenance / agents), rhythm chart, fan/analyst, en/es/fr/pt for agent text AND viewer chrome, focus player, video-source header.
 - Vision: fetch -> extract -> ball (crop detector + motion + follow-cam prior) -> assemble (`--ball`, `--motion lift|mocap`, events, final score) -> evaluate. Event heuristics scored on synthetic GT; pose depth recovery tested on synthetic mocap.
 - Tests: `pytest -q` 36 passed (also passes without torch, as in CI).
+- Tried and reverted (no gain): tracklet stitching; restricting events to measured ball frames.
 
 ### Real-footage run (local cache `/home/user/mpl-cache/m0`, never committed)
 - 60 s panorama clip of manifest[0] at t=2400 s; `post.sh` there chains ball -> evaluate -> assemble (lift + mocap) -> stats. Results go to the private repo `notes/`.
