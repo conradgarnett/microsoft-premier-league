@@ -1,0 +1,110 @@
+{
+  "description": "3D keypoints. ``frames[f][p][j]`` is ``[x, y, z]`` in pitch metres.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "window_id": {
+      "title": "Window Id",
+      "type": "string"
+    },
+    "source": {
+      "default": "synthetic",
+      "title": "Source",
+      "type": "string"
+    },
+    "t_start": {
+      "title": "T Start",
+      "type": "number"
+    },
+    "fps": {
+      "title": "Fps",
+      "type": "number"
+    },
+    "n_frames": {
+      "title": "N Frames",
+      "type": "integer"
+    },
+    "joint_names": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Joint Names",
+      "type": "array"
+    },
+    "bones": {
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "type": "array"
+      },
+      "title": "Bones",
+      "type": "array"
+    },
+    "player_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Player Ids",
+      "type": "array"
+    },
+    "frames": {
+      "items": {
+        "items": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "type": "array"
+      },
+      "title": "Frames",
+      "type": "array"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "items": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional per-joint confidence [f][p][j] in 0..1 (e.g. from a pose model)",
+      "title": "Confidence"
+    }
+  },
+  "required": [
+    "id",
+    "window_id",
+    "t_start",
+    "fps",
+    "n_frames",
+    "player_ids",
+    "frames"
+  ],
+  "title": "SkeletonWindow",
+  "type": "object"
+}

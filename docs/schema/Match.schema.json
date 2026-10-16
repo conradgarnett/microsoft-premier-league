@@ -1,0 +1,549 @@
+{
+  "$defs": {
+    "Attributes": {
+      "description": "0-100 ratings that drive the synthetic engine. Optional for other sources.",
+      "properties": {
+        "pace": {
+          "default": 70,
+          "title": "Pace",
+          "type": "integer"
+        },
+        "passing": {
+          "default": 70,
+          "title": "Passing",
+          "type": "integer"
+        },
+        "shooting": {
+          "default": 60,
+          "title": "Shooting",
+          "type": "integer"
+        },
+        "dribbling": {
+          "default": 65,
+          "title": "Dribbling",
+          "type": "integer"
+        },
+        "tackling": {
+          "default": 60,
+          "title": "Tackling",
+          "type": "integer"
+        },
+        "vision": {
+          "default": 65,
+          "title": "Vision",
+          "type": "integer"
+        },
+        "stamina": {
+          "default": 75,
+          "title": "Stamina",
+          "type": "integer"
+        },
+        "composure": {
+          "default": 65,
+          "title": "Composure",
+          "type": "integer"
+        },
+        "goalkeeping": {
+          "default": 10,
+          "title": "Goalkeeping",
+          "type": "integer"
+        }
+      },
+      "title": "Attributes",
+      "type": "object"
+    },
+    "Event": {
+      "description": "One discrete on-ball (or game-state) event.",
+      "properties": {
+        "id": {
+          "description": "Stable id, e.g. ev00042. Agents cite these as evidence.",
+          "title": "Id",
+          "type": "string"
+        },
+        "t": {
+          "description": "Seconds since match kick-off",
+          "title": "T",
+          "type": "number"
+        },
+        "period": {
+          "title": "Period",
+          "type": "integer"
+        },
+        "minute": {
+          "title": "Minute",
+          "type": "integer"
+        },
+        "second": {
+          "title": "Second",
+          "type": "integer"
+        },
+        "type": {
+          "$ref": "#/$defs/EventType"
+        },
+        "team_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Team Id"
+        },
+        "player_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Player Id"
+        },
+        "x": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "X"
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Y"
+        },
+        "end_x": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End X"
+        },
+        "end_y": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Y"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "complete/incomplete, won/lost, goal/saved/off_target/blocked ...",
+          "title": "Outcome"
+        },
+        "receiver_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receiver Id"
+        },
+        "opponent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opponent Id"
+        },
+        "possession_id": {
+          "default": 0,
+          "title": "Possession Id",
+          "type": "integer"
+        },
+        "under_pressure": {
+          "default": false,
+          "title": "Under Pressure",
+          "type": "boolean"
+        },
+        "related_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Ids",
+          "type": "array"
+        },
+        "attributes": {
+          "additionalProperties": true,
+          "title": "Attributes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "t",
+        "period",
+        "minute",
+        "second",
+        "type"
+      ],
+      "title": "Event",
+      "type": "object"
+    },
+    "EventType": {
+      "enum": [
+        "kickoff",
+        "pass",
+        "carry",
+        "shot",
+        "goal",
+        "save",
+        "tackle",
+        "interception",
+        "pressure",
+        "foul",
+        "free_kick",
+        "goal_kick",
+        "clearance",
+        "ball_recovery",
+        "possession_change",
+        "half_start",
+        "half_end"
+      ],
+      "title": "EventType",
+      "type": "string"
+    },
+    "MatchMeta": {
+      "properties": {
+        "schema_version": {
+          "default": "1.0.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "match_id": {
+          "title": "Match Id",
+          "type": "string"
+        },
+        "source": {
+          "default": "synthetic",
+          "title": "Source",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "competition": {
+          "default": "Inside the Game Synthetic League",
+          "title": "Competition",
+          "type": "string"
+        },
+        "venue": {
+          "default": "Harborview Park",
+          "title": "Venue",
+          "type": "string"
+        },
+        "date": {
+          "default": "2026-10-24",
+          "title": "Date",
+          "type": "string"
+        },
+        "duration_s": {
+          "title": "Duration S",
+          "type": "number"
+        },
+        "half_length_s": {
+          "title": "Half Length S",
+          "type": "number"
+        },
+        "pitch_length": {
+          "default": 105.0,
+          "title": "Pitch Length",
+          "type": "number"
+        },
+        "pitch_width": {
+          "default": 68.0,
+          "title": "Pitch Width",
+          "type": "number"
+        },
+        "fps": {
+          "default": 25.0,
+          "title": "Fps",
+          "type": "number"
+        },
+        "home_team_id": {
+          "title": "Home Team Id",
+          "type": "string"
+        },
+        "away_team_id": {
+          "title": "Away Team Id",
+          "type": "string"
+        },
+        "home_attacks_right_first_half": {
+          "default": true,
+          "title": "Home Attacks Right First Half",
+          "type": "boolean"
+        },
+        "final_score": {
+          "$ref": "#/$defs/Score"
+        }
+      },
+      "required": [
+        "match_id",
+        "duration_s",
+        "half_length_s",
+        "home_team_id",
+        "away_team_id"
+      ],
+      "title": "MatchMeta",
+      "type": "object"
+    },
+    "Player": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "short_name": {
+          "title": "Short Name",
+          "type": "string"
+        },
+        "number": {
+          "title": "Number",
+          "type": "integer"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "team_id": {
+          "title": "Team Id",
+          "type": "string"
+        },
+        "foot": {
+          "default": "right",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "title": "Foot",
+          "type": "string"
+        },
+        "height_m": {
+          "default": 1.8,
+          "title": "Height M",
+          "type": "number"
+        },
+        "attributes": {
+          "$ref": "#/$defs/Attributes"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "short_name",
+        "number",
+        "position",
+        "team_id"
+      ],
+      "title": "Player",
+      "type": "object"
+    },
+    "Position": {
+      "enum": [
+        "GK",
+        "RB",
+        "CB",
+        "LB",
+        "DM",
+        "CM",
+        "RM",
+        "LM",
+        "RW",
+        "LW",
+        "ST"
+      ],
+      "title": "Position",
+      "type": "string"
+    },
+    "Score": {
+      "properties": {
+        "home": {
+          "default": 0,
+          "title": "Home",
+          "type": "integer"
+        },
+        "away": {
+          "default": 0,
+          "title": "Away",
+          "type": "integer"
+        }
+      },
+      "title": "Score",
+      "type": "object"
+    },
+    "Team": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "short_name": {
+          "title": "Short Name",
+          "type": "string"
+        },
+        "color_primary": {
+          "title": "Color Primary",
+          "type": "string"
+        },
+        "color_secondary": {
+          "title": "Color Secondary",
+          "type": "string"
+        },
+        "formation": {
+          "title": "Formation",
+          "type": "string"
+        },
+        "press_intensity": {
+          "default": 0.5,
+          "description": "0 = low block, 1 = full press",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Press Intensity",
+          "type": "number"
+        },
+        "players": {
+          "items": {
+            "$ref": "#/$defs/Player"
+          },
+          "title": "Players",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "short_name",
+        "color_primary",
+        "color_secondary",
+        "formation",
+        "players"
+      ],
+      "title": "Team",
+      "type": "object"
+    },
+    "WindowRef": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "t_start": {
+          "title": "T Start",
+          "type": "number"
+        },
+        "t_end": {
+          "title": "T End",
+          "type": "number"
+        },
+        "trigger_event_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Trigger Event Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "t_start",
+        "t_end",
+        "trigger_event_ids"
+      ],
+      "title": "WindowRef",
+      "type": "object"
+    }
+  },
+  "description": "Everything except the heavy per-window arrays.",
+  "properties": {
+    "meta": {
+      "$ref": "#/$defs/MatchMeta"
+    },
+    "teams": {
+      "items": {
+        "$ref": "#/$defs/Team"
+      },
+      "title": "Teams",
+      "type": "array"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/Event"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "windows": {
+      "items": {
+        "$ref": "#/$defs/WindowRef"
+      },
+      "title": "Windows",
+      "type": "array"
+    }
+  },
+  "required": [
+    "meta",
+    "teams",
+    "events"
+  ],
+  "title": "Match",
+  "type": "object"
+}

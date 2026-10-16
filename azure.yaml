@@ -1,0 +1,15 @@
+# Azure Developer CLI: `azd up` provisions infra/main.bicep and deploys the container.
+name: tactical-replay
+metadata:
+  template: tactical-replay@0.1.0
+services:
+  app:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+infra:
+  provider: bicep
+  path: infra
+  module: main

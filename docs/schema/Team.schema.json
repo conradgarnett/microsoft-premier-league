@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "Attributes": {
+      "description": "0-100 ratings that drive the synthetic engine. Optional for other sources.",
+      "properties": {
+        "pace": {
+          "default": 70,
+          "title": "Pace",
+          "type": "integer"
+        },
+        "passing": {
+          "default": 70,
+          "title": "Passing",
+          "type": "integer"
+        },
+        "shooting": {
+          "default": 60,
+          "title": "Shooting",
+          "type": "integer"
+        },
+        "dribbling": {
+          "default": 65,
+          "title": "Dribbling",
+          "type": "integer"
+        },
+        "tackling": {
+          "default": 60,
+          "title": "Tackling",
+          "type": "integer"
+        },
+        "vision": {
+          "default": 65,
+          "title": "Vision",
+          "type": "integer"
+        },
+        "stamina": {
+          "default": 75,
+          "title": "Stamina",
+          "type": "integer"
+        },
+        "composure": {
+          "default": 65,
+          "title": "Composure",
+          "type": "integer"
+        },
+        "goalkeeping": {
+          "default": 10,
+          "title": "Goalkeeping",
+          "type": "integer"
+        }
+      },
+      "title": "Attributes",
+      "type": "object"
+    },
+    "Player": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "short_name": {
+          "title": "Short Name",
+          "type": "string"
+        },
+        "number": {
+          "title": "Number",
+          "type": "integer"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "team_id": {
+          "title": "Team Id",
+          "type": "string"
+        },
+        "foot": {
+          "default": "right",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "title": "Foot",
+          "type": "string"
+        },
+        "height_m": {
+          "default": 1.8,
+          "title": "Height M",
+          "type": "number"
+        },
+        "attributes": {
+          "$ref": "#/$defs/Attributes"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "short_name",
+        "number",
+        "position",
+        "team_id"
+      ],
+      "title": "Player",
+      "type": "object"
+    },
+    "Position": {
+      "enum": [
+        "GK",
+        "RB",
+        "CB",
+        "LB",
+        "DM",
+        "CM",
+        "RM",
+        "LM",
+        "RW",
+        "LW",
+        "ST"
+      ],
+      "title": "Position",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "short_name": {
+      "title": "Short Name",
+      "type": "string"
+    },
+    "color_primary": {
+      "title": "Color Primary",
+      "type": "string"
+    },
+    "color_secondary": {
+      "title": "Color Secondary",
+      "type": "string"
+    },
+    "formation": {
+      "title": "Formation",
+      "type": "string"
+    },
+    "press_intensity": {
+      "default": 0.5,
+      "description": "0 = low block, 1 = full press",
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Press Intensity",
+      "type": "number"
+    },
+    "players": {
+      "items": {
+        "$ref": "#/$defs/Player"
+      },
+      "title": "Players",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "short_name",
+    "color_primary",
+    "color_secondary",
+    "formation",
+    "players"
+  ],
+  "title": "Team",
+  "type": "object"
+}

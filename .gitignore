@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/
+!docs/data/
+node_modules/
+web/dist/
+.env
+*.sqlite
+.DS_Store
+.azure/
+# real footage (private, never commit): see docs/vision.md for expected layout
+data/real/
+.cache/
+*.mp4
+*.det
+*.tsbuildinfo
+*.egg-info/
