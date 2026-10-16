@@ -19,6 +19,7 @@ export interface MatchInfo {
   meta: { match_id: string; duration_s: number; half_length_s: number; home_team_id: string; away_team_id: string;
     final_score: { home: number; away: number }; source: string; home_attacks_right_first_half: boolean };
   teams: Team[];
+  windows: { id: string; t_start: number; t_end: number; trigger_event_ids: string[] }[];
 }
 export interface KeyMoment {
   id: string; window_id: string; t: number; minute: number; kind: "goal" | "big_chance" | "save" | "shot";
@@ -62,3 +63,17 @@ export const api = {
   metrics: (id: string) => get<Record<string, any>>(`/api/matches/${id}/metrics`),
   replay: (id: string, wid: string) => get<Replay>(`/api/matches/${id}/replay/${wid}`),
 };
+
+export interface Claim { text: string; evidence: string[] }
+export interface CameraCue { t: number; mode: "broadcast" | "behind" | "player" | "orbit"; target?: string; why: string }
+export interface ReelItem { moment_id: string; cameras: CameraCue[]; slowmo: { t_start: number; t_end: number; rate: number; why: string }[]; reason: string; evidence: string[] }
+export interface Insights {
+  provider: string; mode: string; lang: string; focus: string | null;
+  director: { reel: ReelItem[] };
+  moments: Record<string, { analysis: { headline: Claim; claims: Claim[]; why_it_matters: Claim | null }; commentary: { lines: (Claim & { t: number })[] } }>;
+  recap: { headline: Claim; claims: Claim[] };
+  trace: { agent: string; task: string; sender: string; provider: string; attempt: number; status: string; ms?: number; error?: string }[];
+}
+
+export const getInsights = (id: string, mode: string, lang: string, focus: string | null) =>
+  get<Insights>(`/api/matches/${id}/insights?mode=${mode}&lang=${lang}${focus ? `&focus=${focus}` : ""}`);

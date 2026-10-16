@@ -156,7 +156,8 @@ def measured_ball_speed(win: TrackingWindow, t: float) -> float | None:
         return None
     seg = ball[f : f + int(0.3 * win.fps) + 1]
     v = np.linalg.norm(np.diff(seg, axis=0), axis=1) * win.fps
-    return round(float(v.max()), 1)
+    v = v[v < 45]  # anything faster than ~160 km/h is a restart reposition, not ball flight
+    return round(float(v.max()), 1) if len(v) else None
 
 
 def full_report(match: Match, lowres: LowResTracking | None) -> dict[str, Any]:

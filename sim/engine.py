@@ -274,9 +274,7 @@ class MatchSimulator:
         self.state = "dead"
         self.holder = -1
         self.flight = None
-        self.ball[:2] = spot
-        self.ball[2] = 0
-        self.ball_vel[:] = 0
+        self.ball_vel[:] = 0  # the ball stays where it stopped (e.g. in the net) until the restart is taken
         if taker is None:
             s = self.team_slice(team)
             d = np.linalg.norm(self.pos[s] - spot, axis=1)
@@ -869,6 +867,8 @@ class MatchSimulator:
             return
         if np.linalg.norm(self.pos[r.taker] - r.spot) > 1.5 and self.t < r.at + 6:
             return
+        self.ball[:2] = r.spot
+        self.ball[2] = 0
         self.pos[r.taker] = r.spot - (self.to_world(np.array([1.0, 0]), r.team) - self.to_world(np.zeros(2), r.team)) * 0.5
         etype = {"kickoff": EventType.KICKOFF, "free_kick": EventType.FREE_KICK, "goal_kick": EventType.GOAL_KICK}[r.kind]
         cause = getattr(self, "pending_restart_cause", None) or getattr(self, "pending_kickoff_reason", None)

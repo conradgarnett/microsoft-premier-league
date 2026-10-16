@@ -54,9 +54,12 @@ class LocalStore:
 class CosmosStore:
     """Azure Cosmos DB (NoSQL API). Container partitioned by /match_id; id = "<match>:<name>".
 
-    shortcut: skeleton windows (~3 MB) exceed Cosmos' 2 MB item limit, so they stay in a
-    LocalStore (mount Azure Files there in production); move them to Blob Storage at scale.
+    shortcut: Cosmos items max out at 2 MB, so larger documents (whole-match tracking,
+    skeleton windows) go to ``blob_fallback`` with a pointer item in Cosmos; mount Azure
+    Files there in production, or swap in Blob Storage at scale.
     """
+
+    MAX_ITEM_BYTES = 1_500_000
 
     def __init__(self, endpoint: str, database: str, container: str, blob_fallback: LocalStore) -> None:
         from azure.cosmos import CosmosClient, PartitionKey
@@ -68,24 +71,31 @@ class CosmosStore:
         self.c = db.create_container_if_not_exists(container, partition_key=PartitionKey(path="/match_id"))
         self.blobs = blob_fallback
 
+    @staticmethod
+    def _id(match_id: str, name: str) -> str:
+        return f"{match_id}:{name.replace('/', '_')}"
+
     def list_matches(self) -> list[str]:
         q = "SELECT DISTINCT VALUE c.match_id FROM c WHERE c.name = 'match'"
         return sorted(self.c.query_items(q, enable_cross_partition_query=True))
 
     def get_doc(self, match_id: str, name: str) -> Any | None:
-        if name.startswith("skeletons/"):
-            return self.blobs.get_doc(match_id, name)
         from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
         try:
-            return self.c.read_item(f"{match_id}:{name.replace('/', '_')}", partition_key=match_id)["doc"]
+            item = self.c.read_item(self._id(match_id, name), partition_key=match_id)
         except CosmosResourceNotFoundError:
             return None
+        return self.blobs.get_doc(match_id, name) if item.get("blob") else item["doc"]
 
     def put_doc(self, match_id: str, name: str, doc: Any) -> None:
-        if name.startswith("skeletons/"):
-            return self.blobs.put_doc(match_id, name, doc)
-        self.c.upsert_item({"id": f"{match_id}:{name.replace('/', '_')}", "match_id": match_id, "name": name, "doc": doc})
+        item = {"id": self._id(match_id, name), "match_id": match_id, "name": name}
+        if len(json.dumps(doc)) > self.MAX_ITEM_BYTES:
+            self.blobs.put_doc(match_id, name, doc)
+            item["blob"] = True
+        else:
+            item["doc"] = doc
+        self.c.upsert_item(item)
 
 
 def make_store() -> MatchStore:

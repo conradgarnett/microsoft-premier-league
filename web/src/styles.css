@@ -88,3 +88,23 @@ select { background: #121722; border: 1px solid var(--line); border-radius: 6px;
 .mk.goal { background: var(--accent); color: #111; height: 22px; top: 2px; }
 .mk.big_chance { background: rgba(255,90,54,0.5); }
 .mk.sel { outline: 2px solid #fff; }
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.tabs button { flex: 1; }
+.headline { font-family: var(--display); font-size: 22px; margin: 12px 0 8px; line-height: 1.15; }
+.why { background: linear-gradient(90deg, rgba(255,225,77,0.16), transparent); border-left: 3px solid var(--accent); padding: 8px 10px; margin: 8px 0; font-size: 14px; line-height: 1.4; }
+.why span { display: block; font-family: var(--display); text-transform: uppercase; letter-spacing: 1.5px; color: var(--accent); font-size: 12px; }
+.claims { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.claim { background: rgba(255,255,255,0.035); border-radius: 6px; padding: 7px 9px; line-height: 1.4; }
+.chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.chip-ev { font-family: ui-monospace, monospace; font-size: 10px; padding: 1px 5px; border-radius: 3px; color: var(--cool); border-color: rgba(92,225,255,0.3); }
+.more { color: var(--muted); font-size: 10px; }
+.muted { color: var(--muted); }
+.pass-row { cursor: pointer; }
+.caption { position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%); max-width: 60%; text-align: center; background: rgba(5,7,11,0.82); border: 1px solid var(--line); padding: 8px 16px; border-radius: 8px; font-size: 17px; font-weight: 600; animation: slide 0.25s ease-out; }
+.pipeline { display: flex; flex-direction: column; gap: 2px; margin: 10px 0; }
+.stage-node { position: relative; background: rgba(92,225,255,0.07); border: 1px solid rgba(92,225,255,0.25); border-radius: 8px; padding: 8px 10px; display: flex; justify-content: space-between; margin-bottom: 14px; }
+.stage-node.idle { opacity: 0.4; }
+.stage-node .arrow { position: absolute; left: 50%; bottom: -17px; font-style: normal; color: var(--muted); }
+.trace { padding-left: 18px; font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
+.trace li { display: flex; flex-direction: column; }
+.trace li.rejected { color: var(--hot); }

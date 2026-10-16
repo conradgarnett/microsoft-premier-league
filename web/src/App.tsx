@@ -1,6 +1,7 @@
 import { Canvas } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type KeyMoment, type MatchEvent, type MatchInfo, type Replay } from "./api";
+import { api, getInsights, type Insights, type KeyMoment, type MatchEvent, type MatchInfo, type Replay } from "./api";
+import InsightPanel from "./InsightPanel";
 import Pitch from "./replay/Pitch";
 import ReplayScene, { EventOverlays, type CameraMode, type Clock, type Overlays } from "./replay/ReplayScene";
 
@@ -31,6 +32,8 @@ export default function App() {
   const [overlays, setOverlays] = useState<Overlays>(DEFAULT_OVERLAYS.analyst);
   const [camera, setCamera] = useState<CameraMode>("director");
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [lang, setLang] = useState("en");
+  const [insights, setInsights] = useState<Insights | null>(null);
   const clock = useRef<Clock>({ frame: 0, playing: true, rate: 1, autoSlow: true }).current;
   const [uiT, setUiT] = useState(0);
   const [, force] = useState(0);
@@ -44,7 +47,9 @@ export default function App() {
       .then(([i, ev, km, mt]) => {
         setInfo(i); setEvents(ev); setMoments(km); setMetrics(mt);
         const top = [...km].sort((a, b) => a.rank - b.rank)[0];
-        if (top) setMoment(top);
+        // video-derived clips have no shots yet: replay the raw window instead
+        const w = i.windows[0];
+        setMoment(top ?? (w ? { id: `win-${w.id}`, window_id: w.id, t: w.t_start, minute: Math.floor(w.t_start / 60), kind: "shot", title: i.meta.source === "video" ? "Video clip (pose from footage)" : "Replay", team_id: i.meta.home_team_id, player_id: "", shot_event_id: "", outcome: "", xg: 0, importance: 0, rank: 1, score_after: {}, build_up_event_ids: [], evidence: [], replay: { t_start: w.t_start, t_end: w.t_end } } : null));
       })
       .catch((e) => setError(String(e)));
   }, [matchId]);
@@ -55,6 +60,11 @@ export default function App() {
       setReplay(r); clock.frame = 0; clock.playing = true; setLoading(false);
     }).catch((e) => setError(String(e)));
   }, [matchId, moment, clock]);
+  useEffect(() => {
+    if (!matchId) return;
+    setInsights(null);
+    getInsights(matchId, mode, lang, focusId).then(setInsights).catch(() => setInsights(null));
+  }, [matchId, mode, lang, focusId]);
   // 10 Hz UI tick reads the scene clock
   useEffect(() => {
     const id = setInterval(() => replay && setUiT(replay.tracking.t_start + clock.frame / replay.tracking.fps), 100);
@@ -78,6 +88,13 @@ export default function App() {
   const dur = info.meta.duration_s;
   const windowLen = replay.tracking.n_frames / replay.tracking.fps;
   const setMode2 = (m: Mode) => { setMode(m); setOverlays(DEFAULT_OVERLAYS[m]); };
+  const reel = moment ? insights?.director.reel.find((r) => r.moment_id === moment.id) : undefined;
+  const caption = moment ? insights?.moments[moment.id]?.commentary.lines.filter((l) => l.t <= uiT && l.t > uiT - 3.5).slice(-1)[0] : undefined;
+  const seek = (t: number) => {
+    clock.frame = Math.max(0, Math.min(replay.tracking.n_frames - 1, (t - replay.tracking.t_start - 1.5) * replay.tracking.fps));
+    clock.playing = true;
+    setUiT(t);
+  };
   const shooter = moment ? teamById[moment.team_id] : null;
 
   return (
@@ -99,6 +116,12 @@ export default function App() {
               <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode2(m)}>{m === "fan" ? "Fan" : "Analyst"}</button>
             ))}
           </div>
+          <select value={lang} onChange={(e) => setLang(e.target.value)} aria-label="Language">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+            <option value="pt">Português</option>
+          </select>
           <select value={focusId ?? ""} onChange={(e) => setFocusId(e.target.value || null)} aria-label="Focus player">
             <option value="">Focus player…</option>
             {info.teams.map((t) => (
@@ -115,7 +138,7 @@ export default function App() {
           <Canvas shadows camera={{ position: [0, 25, 55], fov: 32, near: 0.1, far: 500 }} gl={{ antialias: true, preserveDrawingBuffer: true }} dpr={[1, 2]}>
             <color attach="background" args={["#05070b"]} />
             <Pitch />
-            <ReplayScene replay={replay} teams={info.teams} clock={clock} overlays={overlays} camera={camera} focusId={focusId} />
+            <ReplayScene replay={replay} teams={info.teams} clock={clock} overlays={overlays} camera={camera} focusId={focusId} script={reel} />
             <EventOverlays replay={replay} uiT={uiT} overlays={overlays} names={names} />
           </Canvas>
           {loading && <div className="loading">Loading replay…</div>}
@@ -137,6 +160,7 @@ export default function App() {
               <div className="title">{moment.title}</div>
             </div>
           )}
+          {caption && <div className="caption">{caption.text}</div>}
           <div className="ticker">
             {ticker.map((e) => (
               <div key={e.id} className={`tick ${e.type}`}>
@@ -149,45 +173,8 @@ export default function App() {
           </div>
         </div>
 
-        <aside className="panel">
-          <h3>{moment?.title}</h3>
-          {moment && (
-            <div className="stats">
-              <div><b>{moment.xg.toFixed(2)}</b><span>xG</span></div>
-              <div><b>{moment.build_up_event_ids.length}</b><span>build-up actions</span></div>
-              <div><b>#{moment.rank}</b><span>importance</span></div>
-            </div>
-          )}
-          {mode === "analyst" ? (
-            <div className="passes">
-              <h4>Passes in this replay</h4>
-              {replay.annotations.passes.map((p) => (
-                <div key={p.event_id} className="pass-row">
-                  <span className="bar" style={{ width: `${p.difficulty * 100}%` }} />
-                  <span>{names[p.player_id]} → {p.receiver_id ? names[p.receiver_id] : "lost"}</span>
-                  <span>{p.length_m.toFixed(0)} m · {(p.difficulty * 100).toFixed(0)}</span>
-                  <span className="evid">{p.event_id}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="fan-blurb">
-              {moment?.kind === "goal" ? "What a moment!" : "So close!"} Chances like this go in about {Math.round((moment?.xg ?? 0) * 100)} times out of 100.
-            </p>
-          )}
-          {metrics && (
-            <div className="team-table">
-              <h4>Match stats</h4>
-              {(mode === "analyst" ? ["possession_pct", "xg", "shots", "pass_completion_pct", "ppda", "field_tilt_pct", "defensive_line_m"] : ["possession_pct", "shots", "xg"]).map((k) => (
-                <div key={k} className="row">
-                  <span>{metrics.teams[home.id][k]}</span>
-                  <span className="k">{k.replace(/_/g, " ").replace(" pct", " %")}</span>
-                  <span>{metrics.teams[away.id][k]}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
+        <InsightPanel insights={insights} moment={moment} mode={mode} lang={lang} replay={replay} names={names} metrics={metrics}
+          homeId={home.id} awayId={away.id} events={events} onSeek={seek} />
       </main>
 
       <footer className="bottom">

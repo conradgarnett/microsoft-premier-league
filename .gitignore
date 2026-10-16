@@ -16,3 +16,4 @@ data/real/
 .cache/
 *.mp4
 *.det
+*.tsbuildinfo

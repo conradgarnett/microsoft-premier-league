@@ -2,7 +2,7 @@ import { Html, Line, OrbitControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { Replay, Team, Vec3 } from "../api";
+import type { ReelItem, Replay, Team, Vec3 } from "../api";
 
 export type CameraMode = "director" | "broadcast" | "orbit" | "player" | "behind";
 export interface Overlays {
@@ -20,6 +20,7 @@ interface Ctx {
   overlays: Overlays;
   camera: CameraMode;
   focusId: string | null;
+  script?: ReelItem;
 }
 
 /** Interpolated joints for frame f (fractional). Returns [player][joint] world vectors. */
@@ -400,7 +401,7 @@ export function EventOverlays({ replay, uiT, overlays, names }: { replay: Replay
   );
 }
 
-function CameraRig({ replay, clock, camera, focusId }: Ctx) {
+function CameraRig({ replay, clock, camera, focusId, script }: Ctx) {
   const { camera: cam } = useThree();
   const look = useRef(new THREE.Vector3());
   const shot = replay.annotations.shots[replay.annotations.shots.length - 1];
@@ -410,14 +411,22 @@ function CameraRig({ replay, clock, camera, focusId }: Ctx) {
     // playback clock lives here so it advances in lockstep with rendering
     if (clock.playing) {
       let rate = clock.rate;
-      if (clock.autoSlow && shot && t > shot.t - 0.7 && t < shot.t + 0.6) rate = Math.min(rate, 0.3);
+      const slow = script?.slowmo.find((s) => t >= s.t_start && t <= s.t_end);
+      if (clock.autoSlow && slow) rate = Math.min(rate, slow.rate);
+      else if (clock.autoSlow && !script && shot && t > shot.t - 0.7 && t < shot.t + 0.6) rate = Math.min(rate, 0.3);
       clock.frame = Math.min(clock.frame + dt * replay.tracking.fps * rate, replay.tracking.n_frames - 1);
       if (clock.frame >= replay.tracking.n_frames - 1) clock.playing = false;
     }
     if (camera === "orbit") return;
     const ball = sampleBall(replay, f);
-    let mode = camera;
-    if (camera === "director") mode = shot && t > shot.t - 2.6 && t < shot.t + 1.2 ? "behind" : "broadcast";
+    let mode: CameraMode = camera;
+    let target_id = focusId;
+    if (camera === "director") {
+      // follow the Replay Director agent's camera script when available
+      const cue = script?.cameras.filter((c) => c.t <= t).slice(-1)[0];
+      mode = cue ? (cue.mode as CameraMode) : shot && t > shot.t - 2.6 && t < shot.t + 1.2 ? "behind" : "broadcast";
+      if (cue?.target) target_id = cue.target;
+    }
     const desired = new THREE.Vector3();
     const target = ball.clone();
     if (mode === "broadcast") {
@@ -429,7 +438,7 @@ function CameraRig({ replay, clock, camera, focusId }: Ctx) {
       desired.copy(ball).sub(dir.clone().multiplyScalar(11)).setY(3.6);
       target.set(goalX, 1, 0).lerp(ball, 0.35);
     } else if (mode === "player") {
-      const id = focusId ?? shot?.player_id;
+      const id = target_id ?? shot?.player_id;
       const i = id ? replay.tracking.player_ids.indexOf(id) : -1;
       if (i >= 0) {
         const fr = replay.tracking.players;
