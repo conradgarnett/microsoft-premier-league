@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import pathlib
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +13,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from agents.orchestrator import Orchestrator
+from agents.providers import provider_name
 from agents.tools import MatchTools
 from analytics import annotate_window
 
@@ -20,6 +22,7 @@ from .store import MatchRepo, make_store
 
 repo = MatchRepo(make_store())
 tools = MatchTools(repo)
+orchestrator = Orchestrator(tools)
 
 app = FastAPI(title="3D Tactical Replay API", version="0.1.0")
 app.add_middleware(GZipMiddleware, minimum_size=2048)
@@ -60,7 +63,30 @@ def list_matches() -> list[dict[str, Any]]:
 
 @app.post("/api/matches/generate")
 def generate(req: GenerateRequest) -> dict[str, str]:
-    return {"match_id": repo.generate(req.seed, req.minutes)}
+    mid = repo.generate(req.seed, req.minutes)
+    tools._reports.pop(mid, None)
+    return {"match_id": mid}
+
+
+@app.get("/api/agents")
+def agents_info() -> dict[str, Any]:
+    from agents.orchestrator import AGENTS
+
+    return {"provider": provider_name(), "agents": [{"id": k, "name": v[0]} for k, v in AGENTS.items()]}
+
+
+@app.get("/api/matches/{match_id}/insights")
+async def insights(match_id: str, mode: Literal["fan", "analyst"] = "analyst", lang: Literal["en", "es", "fr", "pt"] = "en", focus: str | None = None) -> dict[str, Any]:
+    """Multi-agent explanations (cached per mode/language/focus player)."""
+    m = _get(repo.match, match_id)
+    if focus and focus not in {p.id for p in m.players()}:
+        raise HTTPException(404, f"unknown player {focus}")
+    key = f"insights/{mode}_{lang}_{focus or 'none'}"
+    doc = repo.store.get_doc(match_id, key)
+    if doc is None:
+        doc = await orchestrator.run(match_id, mode, lang, focus)
+        repo.store.put_doc(match_id, key, doc)
+    return doc
 
 
 @app.get("/api/matches/{match_id}")

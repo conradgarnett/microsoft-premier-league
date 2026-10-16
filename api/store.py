@@ -126,6 +126,9 @@ class MatchRepo:
     def generate(self, seed: int, minutes: float) -> str:
         bundle = MatchSimulator(seed=seed, duration_min=minutes).run()
         if isinstance(self.store, LocalStore):
+            import shutil
+
+            shutil.rmtree(self.store.root / bundle.match.meta.match_id, ignore_errors=True)  # drop stale analytics/insights
             write_bundle(bundle, self.store.root)
         else:
             from sim.skeleton import build_skeleton
@@ -138,5 +141,6 @@ class MatchRepo:
             for wid, w in bundle.windows.items():
                 self.store.put_doc(mid, f"windows/{wid}", w.model_dump(mode="json"))
                 self.store.put_doc(mid, f"skeletons/{wid}", build_skeleton(w, heights, vision).model_dump())
-        self.match.cache_clear()
+        for c in (self.match, self.lowres, self.window, self.skeleton):
+            c.cache_clear()
         return bundle.match.meta.match_id

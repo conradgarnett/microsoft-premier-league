@@ -77,7 +77,7 @@ def key_moments(match: Match) -> list[dict[str, Any]]:
                 "outcome": e.outcome,
                 "xg": x,
                 "importance": round(importance, 1),
-                "score_after": dict(score),
+                "score_after": {k: v + (1 if goal and k == e.team_id else 0) for k, v in score.items()},
                 "build_up_event_ids": chain,
                 "evidence": evidence,
                 "replay": {"t_start": w.t_start, "t_end": w.t_end},
