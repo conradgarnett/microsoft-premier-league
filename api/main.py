@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import pathlib
+import threading
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -61,9 +62,18 @@ def list_matches() -> list[dict[str, Any]]:
     return out
 
 
+_generating = threading.Lock()
+
+
 @app.post("/api/matches/generate")
 def generate(req: GenerateRequest) -> dict[str, str]:
-    mid = repo.generate(req.seed, req.minutes)
+    # a 90-minute simulation is ~1 CPU-minute: run one at a time instead of queueing threads
+    if not _generating.acquire(blocking=False):
+        raise HTTPException(429, "a match is already being generated; retry shortly")
+    try:
+        mid = repo.generate(req.seed, req.minutes)
+    finally:
+        _generating.release()
     tools._reports.pop(mid, None)
     return {"match_id": mid}
 
